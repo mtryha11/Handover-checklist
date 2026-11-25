@@ -184,7 +184,7 @@
         head: [['TT', 'Mã', 'Nội dung tồn tại', 'Mức', 'Trách nhiệm', 'Hạn', 'Ảnh']],
         body: m.punch.map((p) => [
           String(p.no), fx(p.c),
-          { content: fx(p.t) + (p.note ? '\n' + fx(p.note) : '') + (p.val ? '\nGiá trị đo: ' + fx(p.val) : '') },
+          { content: fx(p.text) + (p.val ? '\nGiá trị đo: ' + fx(p.val) : '') },
           { content: p.sev, styles: { fillColor: SEVC[p.sev], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' } },
           fx(p.resp), fx(p.due), p.photos.length ? String(p.photos.length) : ''
         ]),
@@ -243,7 +243,7 @@
     const withPh = m.punch.filter((p) => p.photos.length);
     if (withPh.length) {
       await photoPages(`Phụ lục ${ax++}. Hình ảnh tồn tại`, withPh.map((p) => ({
-        eyebrow: `Tồn tại ${p.no}/${m.punch.length} · ${p.c}`, title: p.t, note: p.note, sev: p.sev, photos: p.photos,
+        eyebrow: `Tồn tại ${p.no}/${m.punch.length} · ${p.c}`, title: p.text, note: '', sev: p.sev, photos: p.photos,
         meta: [p.resp ? 'Trách nhiệm: ' + p.resp : '', p.due ? 'Hạn khắc phục: ' + p.due : '', p.val ? 'Giá trị đo: ' + p.val : ''].filter(Boolean).join('  ·  ')
       })));
     }

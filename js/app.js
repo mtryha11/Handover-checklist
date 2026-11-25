@@ -533,7 +533,7 @@
       sevLine: `Tồn tại theo mức độ: A ${n.A} · B ${n.B} · C ${n.C}. A – ${SEV.A.short}: ${SEV.A.desc} B – ${SEV.B.short}: ${SEV.B.desc} C – ${SEV.C.short}: ${SEV.C.desc}`,
       punch: punchItems().map((it, i) => {
         const r = cur.res[it.c];
-        return { no: i + 1, c: it.c, t: it.t, note: r.note || '', sev: r.sev || 'B', resp: r.resp || '', due: fmtDate(r.due), val: r.val ? `${r.val} ${it.u || ''}`.trim() : '', photos: phs(r) };
+        return { no: i + 1, c: it.c, t: it.t, text: (r.note || '').trim() || 'Không đạt: ' + it.t, note: r.note || '', sev: r.sev || 'B', resp: r.resp || '', due: fmtDate(r.due), val: r.val ? `${r.val} ${it.u || ''}`.trim() : '', photos: phs(r) };
       }),
       verdict: verdictOf(n).text, verdictNote: cur.verdict.note || '',
       signs: SIGN_ROLES.map((r) => { const s = cur.sign[r.k] || {}; return { label: r.label, org: f[r.org] || '', name: s.name || '', title: s.title || '', img: s.img || '' }; }),
@@ -571,7 +571,7 @@
     appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Chi tiết kết quả kiểm tra</h2>
       <table><tr><th>Mã</th><th>Nội dung kiểm tra</th><th class="c">Kết quả</th><th class="c">Giá trị đo</th><th>Ghi chú</th></tr>
         ${m.detail.map((sec) => `<tr><th colspan="5">${esc(sec.title)}</th></tr>` + sec.rows.map((r) => `<tr><td class="code">${esc(r.c)}</td><td>${esc(r.t)}</td><td class="c">${res(r)}</td><td class="c">${esc(r.val)}</td><td>${esc(r.note)}</td></tr>`).join('')).join('')}</table>`);
-    if (withPh.length) appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Hình ảnh tồn tại</h2>` + withPh.map((p, i) => photoPage(`Tồn tại ${p.no}/${m.punch.length} · ${p.c}`, p.t, p.note, metaOf(p), p.photos, p.sev, i === 0)).join(''));
+    if (withPh.length) appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Hình ảnh tồn tại</h2>` + withPh.map((p, i) => photoPage(`Tồn tại ${p.no}/${m.punch.length} · ${p.c}`, p.text, '', metaOf(p), p.photos, p.sev, i === 0)).join(''));
     if (m.appendix.length) appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Hình ảnh hiện trường khác</h2>` + m.appendix.map((a, i) => photoPage(a.c, a.t, a.note, '', a.photos, '', i === 0)).join(''));
     return `<div class="rpt">
       <table class="rpt-head"><tr><td class="rh-org">${logo}<div>${esc(m.om || 'RAITEK')}</div></td><td class="rh-nat"><b>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</b><br><b>Độc lập – Tự do – Hạnh phúc</b></td></tr></table>
@@ -585,7 +585,7 @@
       <p style="margin:6px 0 0">Tồn tại theo mức độ: <span class="sev A">A</span> ${n.A} · <span class="sev B">B</span> ${n.B} · <span class="sev C">C</span> ${n.C}. (A – ${SEV.A.short}: ${SEV.A.desc} B – ${SEV.B.short}: ${SEV.B.desc} C – ${SEV.C.short}: ${SEV.C.desc})</p>
       <h2>${k++}. Danh sách tồn tại</h2>
       ${m.punch.length ? `<table><tr><th class="c">TT</th><th>Mã</th><th>Nội dung tồn tại</th><th class="c">Mức</th><th>Trách nhiệm</th><th class="c">Hạn</th><th class="c">Ảnh</th></tr>
-        ${m.punch.map((p) => `<tr><td class="c">${p.no}</td><td class="code">${esc(p.c)}</td><td><b>${esc(p.t)}</b>${p.note ? `<br>${esc(p.note)}` : ''}${p.val ? `<br>Giá trị đo: ${esc(p.val)}` : ''}</td><td class="c"><span class="sev ${p.sev}">${p.sev}</span></td><td>${esc(p.resp)}</td><td class="c">${esc(p.due)}</td><td class="c">${p.photos.length || ''}</td></tr>`).join('')}</table>` : '<p>Không ghi nhận tồn tại.</p>'}
+        ${m.punch.map((p) => `<tr><td class="c">${p.no}</td><td class="code">${esc(p.c)}</td><td style="white-space:pre-line">${esc(p.text)}${p.val ? `<br>Giá trị đo: ${esc(p.val)}` : ''}</td><td class="c"><span class="sev ${p.sev}">${p.sev}</span></td><td>${esc(p.resp)}</td><td class="c">${esc(p.due)}</td><td class="c">${p.photos.length || ''}</td></tr>`).join('')}</table>` : '<p>Không ghi nhận tồn tại.</p>'}
       <h2>${k++}. Kết luận</h2>
       <div class="verdict-p"><b>${esc(m.verdict)}</b>${m.verdictNote ? `<div style="white-space:pre-line;margin-top:4px">${esc(m.verdictNote)}</div>` : ''}</div>
       <div class="signs">${m.signs.map((s) => `<div class="s"><b>${esc(s.label.toUpperCase())}</b>${s.org ? `<div>${esc(s.org)}</div>` : ''}<div style="font-style:italic;color:#666">(Ký, ghi rõ họ tên)</div>${s.img ? `<img src="${s.img}" alt="">` : '<div class="sp"></div>'}<b>${esc(s.name)}</b>${s.title ? `<div>${esc(s.title)}</div>` : ''}</div>`).join('')}</div>
@@ -640,11 +640,11 @@
     });
     const punch = punchItems().map((it, i) => {
       const r = cur.res[it.c];
-      return [W(i + 1), W(it.c), W(it.t), W(r.sev || 'B'), W(r.note || ''), W(r.val ? `${r.val} ${it.u || ''}` : ''), W(r.resp || ''), W(fmtDate(r.due)), W(''), W('')];
+      return [W(i + 1), W(it.c), W((r.note || '').trim() || 'Không đạt: ' + it.t), W(r.sev || 'B'), W(r.val ? `${r.val} ${it.u || ''}` : ''), W(r.resp || ''), W(fmtDate(r.due)), W(''), W('')];
     });
     const blob = window.miniXLSX([
       { name: 'Checklist', widths: [26, 9, 60, 11, 8, 13, 8, 45, 15, 14, 8], rows: info.concat([head], rows) },
-      { name: 'Tồn tại', widths: [5, 9, 55, 7, 50, 14, 15, 14, 16, 30], freezeRow: 1, rows: [['TT', 'Mã', 'Hạng mục', 'Mức', 'Mô tả tồn tại', 'Giá trị đo', 'Trách nhiệm', 'Hạn khắc phục', 'Ngày hoàn thành', 'Xác nhận / ghi chú'].map(H)].concat(punch) }
+      { name: 'Tồn tại', widths: [5, 9, 70, 7, 14, 15, 14, 16, 30], freezeRow: 1, rows: [['TT', 'Mã', 'Nội dung tồn tại', 'Mức', 'Giá trị đo', 'Trách nhiệm', 'Hạn khắc phục', 'Ngày hoàn thành', 'Xác nhận / ghi chú'].map(H)].concat(punch) }
     ]);
     shareOrDownload(blob, baseName() + '.xlsx', 'Checklist ' + cur.info.project);
   }
@@ -695,7 +695,7 @@
     lines.push(`DANH SÁCH TỒN TẠI – ${f.project}`);
     punchItems().forEach((it, i) => {
       const r = cur.res[it.c];
-      lines.push(`${i + 1}. [${r.sev || 'B'}] ${it.c} ${it.t}${r.note ? ' – ' + r.note : ''}${r.resp ? ' · TN: ' + r.resp : ''}${r.due ? ' · Hạn: ' + fmtDate(r.due) : ''}`);
+      lines.push(`${i + 1}. [${r.sev || 'B'}] ${it.c}: ${(r.note || '').trim() || 'Không đạt: ' + it.t}${r.resp ? ' · TN: ' + r.resp : ''}${r.due ? ' · Hạn: ' + fmtDate(r.due) : ''}`);
     });
     return lines.join('\n');
   }
