@@ -1,17 +1,17 @@
-/* Layout: một cột cho điện thoại, dải tiêu đề màu xanh "cell pin" dính trên cùng,
+/* Layout: một cột cho điện thoại, dải tiêu đề màu chàm Raitek dính trên cùng,
    thanh tab dưới đáy. Nền sáng tương phản cao để đọc được dưới nắng công trường. */
 :root {
-  --bg: #eef2f7;
+  --bg: #f0f0f7;
   --surface: #ffffff;
-  --surface-2: #f6f8fb;
-  --ink: #0e1c31;
-  --muted: #56667d;
-  --line: #d5dde8;
-  --brand: #123a6b;
+  --surface-2: #f6f6fb;
+  --ink: #14113a;
+  --muted: #5b5a7a;
+  --line: #d9d8ea;
+  --brand: #190d82;
   --brand-ink: #ffffff;
-  --brand-2: #1b4c88;
-  --sun: #f2a900;
-  --sun-ink: #2a1d00;
+  --brand-2: #2b1fa3;
+  --sun: #f2b80f;
+  --sun-ink: #1c1300;
   --ok: #17803f;
   --ok-bg: #e3f4ea;
   --nok: #c3281f;
@@ -21,8 +21,8 @@
   --sev-a: #c3281f;
   --sev-b: #c26a00;
   --sev-c: #1f5fc2;
-  --focus: #f2a900;
-  --shadow: 0 1px 2px rgba(14, 28, 49, .06), 0 2px 8px rgba(14, 28, 49, .05);
+  --focus: #f2b80f;
+  --shadow: 0 1px 2px rgba(20, 17, 58, .06), 0 2px 8px rgba(20, 17, 58, .05);
 
   --f-body: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -31,19 +31,19 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0a111e; --surface: #121c2e; --surface-2: #17233a; --ink: #e7eef8; --muted: #95a6bf;
-    --line: #26354f; --brand: #0f2b52; --brand-ink: #f2f6fc; --brand-2: #1c4579; --sun: #f5b82e; --sun-ink: #241800;
+    --bg: #0b0a1f; --surface: #15132e; --surface-2: #1b1939; --ink: #ecebf8; --muted: #a3a1c4;
+    --line: #2c2950; --brand: #140a66; --brand-ink: #f2f6fc; --brand-2: #3427b8; --sun: #f5c435; --sun-ink: #241800;
     --ok: #46c17a; --ok-bg: #12301f; --nok: #ff6b60; --nok-bg: #3a1513; --na: #9aa7ba; --na-bg: #1d2738;
-    --sev-a: #ff6b60; --sev-b: #f0a040; --sev-c: #6ea4ff; --focus: #f5b82e;
+    --sev-a: #ff6b60; --sev-b: #f0a040; --sev-c: #6ea4ff; --focus: #f5c435;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0a111e; --surface: #121c2e; --surface-2: #17233a; --ink: #e7eef8; --muted: #95a6bf;
-  --line: #26354f; --brand: #0f2b52; --brand-ink: #f2f6fc; --brand-2: #1c4579; --sun: #f5b82e; --sun-ink: #241800;
+  --bg: #0b0a1f; --surface: #15132e; --surface-2: #1b1939; --ink: #ecebf8; --muted: #a3a1c4;
+  --line: #2c2950; --brand: #140a66; --brand-ink: #f2f6fc; --brand-2: #3427b8; --sun: #f5c435; --sun-ink: #241800;
   --ok: #46c17a; --ok-bg: #12301f; --nok: #ff6b60; --nok-bg: #3a1513; --na: #9aa7ba; --na-bg: #1d2738;
-  --sev-a: #ff6b60; --sev-b: #f0a040; --sev-c: #6ea4ff; --focus: #f5b82e;
+  --sev-a: #ff6b60; --sev-b: #f0a040; --sev-c: #6ea4ff; --focus: #f5c435;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4);
   color-scheme: dark;
 }
@@ -94,7 +94,7 @@ h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
 }
 .icon-btn:active { background: rgba(255,255,255,.14); }
 .icon-btn svg { width: 24px; height: 24px; }
-.brand-mark { width: 34px; height: 34px; flex: none; margin-left: 4px; }
+.brand-mark { width: 38px; height: 38px; flex: none; margin-left: 4px; display: block; }
 .progress-strip { height: 4px; background: rgba(255,255,255,.18); }
 .progress-strip > i { display: block; height: 100%; background: var(--sun); transition: width .3s; }
 

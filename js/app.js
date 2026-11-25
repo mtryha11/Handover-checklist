@@ -40,7 +40,7 @@
     dup: sv('<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V4a2 2 0 0 1 2-2h10"/>'),
     sun: sv('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>')
   };
-  const LOGO = `<svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#f2a900"/><path d="M14 40h36l-6-18H20z" fill="#123a6b"/><path d="M26 22l-3 18M38 22l3 18M17 31h30" stroke="#f2a900" stroke-width="2"/><circle cx="46" cy="15" r="5" fill="#fff"/><path d="M22 46h20v4H22z" fill="#123a6b"/></svg>`;
+  const LOGO = window.RAITEK_LOGO ? `<img class="brand-mark" src="${window.RAITEK_LOGO}" alt="Raitek">` : '';
 
   /* ---------------- constants ---------------- */
   const ST = { ok: 'Đạt', nok: 'Không đạt', na: 'N/A' };
@@ -282,7 +282,7 @@
         <div class="chips"><span class="chip ok">${n.ok} đạt</span><span class="chip nok">${n.nok} không đạt</span>${n.A ? `<span class="chip nok">${n.A} mức A</span>` : ''}<span class="chip">${n.none} chưa kiểm</span></div>
       </button>`;
     }).join('');
-    return `${topbar({ title: 'PV Handover', sub: 'Checklist nhận bàn giao O&M điện mặt trời', back: false, actions: `<button class="icon-btn" data-act="settings" aria-label="Cài đặt">${I.gear}</button>` })}
+    return `${topbar({ title: 'Raitek PV Handover', sub: 'Checklist nhận bàn giao O&M điện mặt trời', back: false, actions: `<button class="icon-btn" data-act="settings" aria-label="Cài đặt">${I.gear}</button>` })}
     <main class="wrap no-tabs">
       <section class="card hero-card">
         <h2>Bắt đầu một đợt kiểm tra</h2>
@@ -547,7 +547,7 @@
       appendix: all.map((it) => ({ it, r: cur.res[it.c] || {} })).filter(({ r }) => r.s !== 'nok' && phs(r).length)
         .map(({ it, r }) => ({ c: it.c, t: it.t, note: r.note || '', photos: phs(r) })),
       footer: `${f.project || ''} · ${P.title}`,
-      stamp: `Lập bằng PV Handover Checklist · bộ checklist ${cur.clv || CL.version} · xuất lúc ${fmtDT(Date.now())}`
+      stamp: `Raitek PV Handover Checklist · bộ checklist ${cur.clv || CL.version} · xuất lúc ${fmtDT(Date.now())}`
     };
   }
 
@@ -557,13 +557,24 @@
     let info = '';
     for (let i = 0; i < m.info.length; i += 2) info += `<tr><td>${esc(m.info[i][0])}</td><td>${esc(m.info[i][1])}</td><td>${esc(m.info[i + 1][0])}</td><td>${esc(m.info[i + 1][1])}</td></tr>`;
     if (m.team) info += `<tr><td>Thành phần tham gia</td><td colspan="3" style="white-space:pre-line">${esc(m.team)}</td></tr>`;
-    const grid = (photos) => `<div class="ph-grid">${photos.map((src) => `<img src="${src}" alt="">`).join('')}</div>`;
-    const fig = (cap, note, photos, sev) => `<div class="ph-block"><p class="ph-cap">${sev ? `<span class="sev ${sev}">${sev}</span> ` : ''}${esc(cap)}</p>${note ? `<p class="ph-note">${esc(note)}</p>` : ''}${grid(photos)}</div>`;
     const n = m.counts;
     let k = 1;
     const withPh = m.punch.filter((p) => p.photos.length);
+    const logo = window.RAITEK_LOGO ? `<img class="rpt-logo" src="${window.RAITEK_LOGO}" alt="Raitek">` : '';
+    const photoPage = (eyebrow, title, note, meta, photos, sev, first) => `<section class="ph-page${first ? ' first' : ''}">
+        <p class="ph-eyebrow">${esc(eyebrow)}</p>
+        <h3 class="ph-title">${sev ? `<span class="sev ${sev}">${sev}</span> ` : ''}${esc(title)}</h3>
+        ${note ? `<p class="ph-note">${esc(note)}</p>` : ''}${meta ? `<p class="ph-meta">${esc(meta)}</p>` : ''}
+        <div class="ph-grid n${Math.min(photos.length, 4)}">${photos.map((src) => `<img src="${src}" alt="">`).join('')}</div></section>`;
+    const metaOf = (p) => [p.resp ? 'Trách nhiệm: ' + p.resp : '', p.due ? 'Hạn khắc phục: ' + p.due : '', p.val ? 'Giá trị đo: ' + p.val : ''].filter(Boolean).join(' · ');
+    const appx = [];
+    appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Chi tiết kết quả kiểm tra</h2>
+      <table><tr><th>Mã</th><th>Nội dung kiểm tra</th><th class="c">Kết quả</th><th class="c">Giá trị đo</th><th>Ghi chú</th></tr>
+        ${m.detail.map((sec) => `<tr><th colspan="5">${esc(sec.title)}</th></tr>` + sec.rows.map((r) => `<tr><td class="code">${esc(r.c)}</td><td>${esc(r.t)}</td><td class="c">${res(r)}</td><td class="c">${esc(r.val)}</td><td>${esc(r.note)}</td></tr>`).join('')).join('')}</table>`);
+    if (withPh.length) appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Hình ảnh tồn tại</h2>` + withPh.map((p, i) => photoPage(`Tồn tại ${p.no}/${m.punch.length} · ${p.c}`, p.t, p.note, metaOf(p), p.photos, p.sev, i === 0)).join(''));
+    if (m.appendix.length) appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Hình ảnh hiện trường khác</h2>` + m.appendix.map((a, i) => photoPage(a.c, a.t, a.note, '', a.photos, '', i === 0)).join(''));
     return `<div class="rpt">
-      <table style="border:0;margin-bottom:6px"><tr><td style="border:0;width:45%;text-align:center;font-weight:600">${esc(m.om)}</td><td style="border:0;text-align:center"><b>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</b><br><b>Độc lập – Tự do – Hạnh phúc</b></td></tr></table>
+      <table class="rpt-head"><tr><td class="rh-org">${logo}<div>${esc(m.om || 'RAITEK')}</div></td><td class="rh-nat"><b>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</b><br><b>Độc lập – Tự do – Hạnh phúc</b></td></tr></table>
       <h1>${esc(m.title)}</h1>
       <p class="rpt-sub">${esc(m.sub)}</p>
       <h2>${k++}. Thông tin chung</h2><table class="info">${info}</table>
@@ -575,14 +586,10 @@
       <h2>${k++}. Danh sách tồn tại</h2>
       ${m.punch.length ? `<table><tr><th class="c">TT</th><th>Mã</th><th>Nội dung tồn tại</th><th class="c">Mức</th><th>Trách nhiệm</th><th class="c">Hạn</th><th class="c">Ảnh</th></tr>
         ${m.punch.map((p) => `<tr><td class="c">${p.no}</td><td class="code">${esc(p.c)}</td><td><b>${esc(p.t)}</b>${p.note ? `<br>${esc(p.note)}` : ''}${p.val ? `<br>Giá trị đo: ${esc(p.val)}` : ''}</td><td class="c"><span class="sev ${p.sev}">${p.sev}</span></td><td>${esc(p.resp)}</td><td class="c">${esc(p.due)}</td><td class="c">${p.photos.length || ''}</td></tr>`).join('')}</table>` : '<p>Không ghi nhận tồn tại.</p>'}
-      ${withPh.length ? `<h2>${k++}. Hình ảnh tồn tại</h2>${withPh.map((p) => fig(`${p.no}. ${p.c} – ${p.t}`, p.note, p.photos, p.sev)).join('')}` : ''}
       <h2>${k++}. Kết luận</h2>
       <div class="verdict-p"><b>${esc(m.verdict)}</b>${m.verdictNote ? `<div style="white-space:pre-line;margin-top:4px">${esc(m.verdictNote)}</div>` : ''}</div>
       <div class="signs">${m.signs.map((s) => `<div class="s"><b>${esc(s.label.toUpperCase())}</b>${s.org ? `<div>${esc(s.org)}</div>` : ''}<div style="font-style:italic;color:#666">(Ký, ghi rõ họ tên)</div>${s.img ? `<img src="${s.img}" alt="">` : '<div class="sp"></div>'}<b>${esc(s.name)}</b>${s.title ? `<div>${esc(s.title)}</div>` : ''}</div>`).join('')}</div>
-      <h2>${k++}. Chi tiết kết quả kiểm tra</h2>
-      <table><tr><th>Mã</th><th>Nội dung kiểm tra</th><th class="c">Kết quả</th><th class="c">Giá trị đo</th><th>Ghi chú</th></tr>
-        ${m.detail.map((sec) => `<tr><th colspan="5">${esc(sec.title)}</th></tr>` + sec.rows.map((r) => `<tr><td class="code">${esc(r.c)}</td><td>${esc(r.t)}</td><td class="c">${res(r)}</td><td class="c">${esc(r.val)}</td><td>${esc(r.note)}</td></tr>`).join('')).join('')}</table>
-      ${m.appendix.length ? `<h2>${k++}. Phụ lục hình ảnh</h2>${m.appendix.map((a) => fig(`${a.c} – ${a.t}`, a.note, a.photos)).join('')}` : ''}
+      ${appx.join('')}
       <p class="foot">${esc(m.stamp)}</p>
     </div>`;
   }
@@ -976,29 +983,43 @@
 
   /* ---------------- report CSS (shared by preview, print & HTML export) ---------------- */
   const REPORT_CSS = `
-.rpt{font:12px/1.45 var(--f-body);color:#111;background:#fff;padding:18px;min-width:640px}
-.rpt h1{font-size:18px;text-align:center;margin:8px 0 2px;text-transform:uppercase;letter-spacing:.02em}
-.rpt .rpt-sub{text-align:center;color:#444;margin:0 0 12px}
-.rpt h2{font-size:13px;margin:16px 0 6px;padding:5px 8px;background:#123a6b;color:#fff;text-transform:uppercase;letter-spacing:.03em}
+.rpt{font:12.5px/1.5 var(--f-body);color:#111;background:#fff;padding:18px;min-width:640px}
+.rpt .rpt-head{border:0;margin-bottom:8px;border-bottom:2px solid #f2b80f}
+.rpt .rpt-head td{border:0;vertical-align:middle}
+.rpt .rh-org{width:46%;font-weight:700;color:#190d82;font-size:13px}
+.rpt .rh-org{display:flex;align-items:center;gap:10px}
+.rpt .rpt-logo{width:54px;height:54px;flex:none}
+.rpt .rh-nat{text-align:center}
+.rpt h1{font-size:21px;text-align:center;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.02em;color:#190d82;text-wrap:balance}
+.rpt .rpt-sub{text-align:center;color:#444;margin:0 0 14px;font-size:13.5px}
+.rpt h2{font-size:15px;margin:20px 0 8px;padding:7px 10px;background:#190d82;color:#fff;text-transform:uppercase;letter-spacing:.03em;border-left:6px solid #f2b80f}
+.rpt h2.appx{margin-top:28px}
 .rpt table{width:100%;border-collapse:collapse}
-.rpt th,.rpt td{border:1px solid #b8c2d0;padding:4px 6px;vertical-align:top;text-align:left}
-.rpt th{background:#eef2f7;font-weight:600}
+.rpt th,.rpt td{border:1px solid #c4c2dc;padding:5px 7px;vertical-align:top;text-align:left}
+.rpt th{background:#ecebf7;font-weight:600}
 .rpt td.c,.rpt th.c,.rpt .sum td,.rpt .sum th{text-align:center}
-.rpt .code{font-family:var(--f-mono);white-space:nowrap;font-size:11px}
+.rpt .code{font-family:var(--f-mono);white-space:nowrap;font-size:11.5px}
 .rpt .r-ok{color:#17803f;font-weight:700}.rpt .r-nok{color:#c3281f;font-weight:700}.rpt .r-na{color:#66748a}.rpt .r-none{color:#a06a00}
-.rpt .info td:nth-child(odd){width:20%;background:#f6f8fb;font-weight:600}
-.rpt .ph-block{margin:8px 0 12px;break-inside:avoid}
-.rpt .ph-cap{margin:0 0 2px;font-weight:700}
-.rpt .ph-note{margin:0 0 4px;color:#444}
-.rpt .ph-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.rpt .ph-grid img{width:100%;height:auto;max-height:360px;object-fit:contain;background:#f3f5f8;border:1px solid #ccc;break-inside:avoid}
-.rpt .sev{display:inline-block;padding:0 6px;border-radius:4px;color:#fff;font-weight:700;font-family:var(--f-mono)}
+.rpt .info td:nth-child(odd){width:20%;background:#f6f6fb;font-weight:600}
+.rpt .sev{display:inline-block;padding:0 7px;border-radius:4px;color:#fff;font-weight:700;font-family:var(--f-mono)}
 .rpt .sev.A{background:#c3281f}.rpt .sev.B{background:#c26a00}.rpt .sev.C{background:#1f5fc2}
-.rpt .verdict-p{border:2px solid #123a6b;padding:8px 10px;margin-top:6px}
-.rpt .signs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px;text-align:center}
+.rpt .verdict-p{border:2px solid #190d82;padding:10px 12px;margin-top:6px;font-size:14px}
+.rpt .signs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px;text-align:center}
 .rpt .signs img{max-height:70px;max-width:100%;display:block;margin:6px auto}
 .rpt .signs .sp{height:76px}
-.rpt .foot{margin-top:14px;color:#666;font-size:10.5px;text-align:center}`;
+.rpt .ph-page{padding:14px 0 18px;border-top:1px dashed #c4c2dc}
+.rpt .ph-page.first{border-top:0}
+.rpt .ph-eyebrow{margin:0;color:#666;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.rpt .ph-title{margin:4px 0 6px;font-size:18px;line-height:1.35;color:#190d82;text-wrap:balance}
+.rpt .ph-title .sev{font-size:15px;vertical-align:2px}
+.rpt .ph-note{margin:0 0 4px;font-size:14px}
+.rpt .ph-meta{margin:0 0 10px;color:#555;font-size:12.5px}
+.rpt .ph-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;border-top:2px solid #f2b80f;padding-top:10px}
+.rpt .ph-grid.n1,.rpt .ph-grid.n2{grid-template-columns:1fr}
+.rpt .ph-grid img{width:100%;height:auto;max-height:520px;object-fit:contain;background:#f3f3f8;border:1px solid #c4c2dc}
+.rpt .foot{margin-top:16px;color:#666;font-size:11px;text-align:center}
+@media print{.rpt .ph-page{break-before:page;border-top:0;padding-top:0}.rpt h2.appx{break-before:page}.rpt h2.appx+.ph-page{break-before:auto}
+.rpt .ph-grid img{max-height:105mm}.rpt .ph-grid.n1 img{max-height:200mm}.rpt .ph-grid.n2 img{max-height:105mm}}`;
 
   /* ---------------- boot ---------------- */
   (async function boot() {

@@ -1,4 +1,4 @@
-# PV Handover – Checklist bàn giao O&M điện mặt trời
+# Raitek PV Handover – Checklist bàn giao O&M điện mặt trời
 
 Ứng dụng web cài lên điện thoại (PWA) để đi kiểm tra hiện trạng, audit và **nhận bàn giao O&M** dự án điện mặt trời
 (áp mái, mặt đất, nổi). Chạy **offline** ngoài công trường, không cần server, không cần đăng nhập.
@@ -15,8 +15,9 @@
   theo thời hạn), **C** (khuyến nghị), kèm người chịu trách nhiệm và hạn khắc phục.
 - **Kết luận tự động** (đủ điều kiện / có điều kiện / chưa đủ điều kiện nhận bàn giao), có thể chỉnh tay.
 - **Chữ ký điện tử** 3 bên: Chủ đầu tư, bên bàn giao (EPC), bên nhận (O&M).
-- **Xuất biên bản**: file **PDF** tạo ngay trên điện thoại, chạy cả khi offline (A4, có quốc hiệu, ảnh tồn tại khổ lớn
-  2 ảnh/hàng, đánh số trang), **Excel .xlsx** (sheet Checklist + sheet Tồn tại), file **HTML** gửi qua Zalo/email,
+- **Xuất biên bản**: file **PDF** tạo ngay trên điện thoại, chạy cả khi offline. Phần chính gồm thông tin, tổng hợp,
+  danh sách tồn tại, kết luận và chữ ký; phụ lục gồm bảng chi tiết và **ảnh mỗi hạng mục một trang** (tối đa 4 ảnh/trang).
+  Mẫu biên bản mang nhận diện Raitek (logo, màu chàm – vàng), **Excel .xlsx** (sheet Checklist + sheet Tồn tại), file **HTML** gửi qua Zalo/email,
   **sao chép tóm tắt** dạng text.
 - **Sao lưu / khôi phục** file `.json` (gồm cả ảnh) để chuyển máy hoặc lưu hồ sơ.
 
@@ -60,6 +61,7 @@ index.html            khung trang
 css/app.css           giao diện (sáng/tối, tối ưu đọc ngoài nắng)
 js/checklist.js       bộ hạng mục kiểm tra
 js/app.js             logic ứng dụng, lưu trữ, xuất biên bản
+js/brand.js           logo Raitek (nhúng sẵn, dùng cho ứng dụng và PDF)
 js/xlsx.js            tạo file Excel .xlsx (không cần thư viện ngoài)
 js/pdf.js             tạo file PDF biên bản (jsPDF, font Noto Sans tiếng Việt)
 js/vendor/            thư viện PDF + font, chạy offline (xem LICENSES.md)
