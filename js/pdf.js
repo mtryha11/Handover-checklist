@@ -28,6 +28,12 @@
   }
   // Font PDF thiếu ≥ ≤ →: thay bằng ký tự tương đương.
   const fx = (s) => String(s == null ? '' : s).normalize('NFC').replace(/≥/g, '>=').replace(/≤/g, '<=').replace(/→/g, '->').replace(/Ω/g, 'Ω');
+  // Kích thước ảnh: đọc từ phần đầu file JPEG/PNG (không giải mã cả ảnh, đỡ tốn bộ nhớ trên iPhone).
+  let propsOf = null;
+  async function imgDims(src) {
+    if (propsOf) { try { const p = propsOf(src); if (p && p.width && p.height) return { src, w: p.width, h: p.height }; } catch (e) { /* fall back */ } }
+    return imgInfo(src);
+  }
   function imgInfo(src) {
     return new Promise((res) => {
       const i = new Image();
@@ -44,6 +50,7 @@
     doc.addFileToVFS('NS-R.ttf', window.PVHO_PDF_FONTS.regular); doc.addFont('NS-R.ttf', 'NS', 'normal');
     doc.addFileToVFS('NS-B.ttf', window.PVHO_PDF_FONTS.bold); doc.addFont('NS-B.ttf', 'NS', 'bold');
     doc.setFont('NS', 'normal'); doc.setLineHeightFactor(1.3);
+    propsOf = (src) => doc.getImageProperties(src);
     const logo = window.RAITEK_LOGO ? await imgInfo(window.RAITEK_LOGO) : null;
 
     const PW = 210, PH = 297, M = 13, CW = PW - 2 * M, BOTTOM = PH - 16;
@@ -85,7 +92,7 @@
     async function photoPages(appxTitle, items) {
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        const imgs = (await Promise.all(it.photos.map(imgInfo))).filter(Boolean);
+        const imgs = []; for (const src of it.photos) { const d = await imgDims(src); if (d) imgs.push(d); }
         for (let c = 0; c < imgs.length; c += 4) {
           newPage();
           if (i === 0 && c === 0) heading(appxTitle, 0);

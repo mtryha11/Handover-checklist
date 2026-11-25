@@ -151,7 +151,9 @@
   const settings = Object.assign({ inspector: '', om: '', theme: 'system' }, lsGet('pvho-settings', {}));
   const S = { view: 'home', tab: 'check', sec: null, filter: 'all', q: '', list: [], isNew: false, focus: null };
   let cur = null;            // inspection đang mở
-  const photoCache = new Map();
+  const photoCache = new Map(); // ảnh gốc (chỉ dùng khi xem từng ảnh và khi xuất file)
+  const thumbCache = new Map(); // ảnh thu nhỏ để hiển thị trong ứng dụng (tránh tràn bộ nhớ trên iPhone)
+  const PH_BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
   const openSet = new Set(); // item mở rộng
   const hintSet = new Set(); // item đang hiện tiêu chí
 
@@ -227,8 +229,10 @@
     const it = await store.get('insp', id);
     if (!it) return toast('Không tìm thấy biên bản');
     cur = it; cur.res = cur.res || {}; cur.custom = cur.custom || []; cur.sign = cur.sign || {}; cur.verdict = cur.verdict || { v: '', note: '' };
-    photoCache.clear(); openSet.clear(); hintSet.clear();
-    (await store.photosOf(id)).forEach((p) => photoCache.set(p.id, p.data));
+    photoCache.clear(); thumbCache.clear(); openSet.clear(); hintSet.clear();
+    const photos = await store.photosOf(id);
+    photos.forEach((p) => { photoCache.set(p.id, p.data); if (p.thumb) thumbCache.set(p.id, p.thumb); });
+    setTimeout(() => fillThumbs(id, photos.filter((p) => !p.thumb)), 300);
     go('insp', { tab, q: '', filter: 'all' });
   }
 
@@ -394,7 +398,7 @@
   }
 
   function photosHTML(c, ids, removable) {
-    return (ids || []).map((id) => photoCache.has(id) ? `<button class="ph" data-act="ph-view" data-c="${c}" data-id="${id}" aria-label="Xem ảnh"><img src="${photoCache.get(id)}" alt="" loading="lazy"></button>` : '').join('');
+    return (ids || []).map((id) => photoCache.has(id) ? `<button class="ph" data-act="ph-view" data-c="${c}" data-id="${id}" aria-label="Xem ảnh"><img src="${thumbCache.get(id) || PH_BLANK}" data-ph="${id}" alt="" loading="lazy" decoding="async"></button>` : '').join('');
   }
   function itemHTML(it, showSec) {
     const c = it.c; const r = cur.res[c] || {}; const st = r.s || '';
@@ -506,15 +510,16 @@
         ${!ARTIFACT && !STANDALONE ? `<button class="btn" data-act="print">${I.print} In trực tiếp</button>` : ''}
       </div>
       <div class="eyebrow">Xem trước</div>
-      <div class="report-wrap">${reportHTML()}</div>
+      <div class="report-wrap">${reportHTML(reportModel({ thumbs: true }))}</div>
     </main>${tabbar()}`;
   }
 
   // Dữ liệu biên bản dùng chung cho xem trước, file HTML và file PDF.
-  function reportModel() {
+  function reportModel(opts = {}) {
     const f = cur.info; const all = allItems(); const n = count(all);
     const P = PURPOSE[f.purpose] || PURPOSE.handover;
-    const phs = (r) => (r.ph || []).filter((id) => photoCache.has(id)).map((id) => photoCache.get(id));
+    // Xem trước trong ứng dụng dùng ảnh thu nhỏ; file PDF / HTML dùng ảnh gốc.
+    const phs = (r) => (r.ph || []).filter((id) => photoCache.has(id)).map((id) => opts.thumbs ? (thumbCache.get(id) || PH_BLANK) : photoCache.get(id));
     const secs = CL.sections.map((s) => ({ s, its: secItems(s) })).filter((x) => x.its.length);
     return {
       title: P.title, om: f.om || '', project: f.project || '',
@@ -565,7 +570,7 @@
         <p class="ph-eyebrow">${esc(eyebrow)}</p>
         <h3 class="ph-title">${sev ? `<span class="sev ${sev}">${sev}</span> ` : ''}${esc(title)}</h3>
         ${note ? `<p class="ph-note">${esc(note)}</p>` : ''}${meta ? `<p class="ph-meta">${esc(meta)}</p>` : ''}
-        <div class="ph-grid n${Math.min(photos.length, 4)}">${photos.map((src) => `<img src="${src}" alt="">`).join('')}</div></section>`;
+        <div class="ph-grid n${Math.min(photos.length, 4)}">${photos.map((src) => `<img src="${src}" alt="" loading="lazy" decoding="async">`).join('')}</div></section>`;
     const metaOf = (p) => [p.resp ? 'Trách nhiệm: ' + p.resp : '', p.due ? 'Hạn khắc phục: ' + p.due : '', p.val ? 'Giá trị đo: ' + p.val : ''].filter(Boolean).join(' · ');
     const appx = [];
     appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Chi tiết kết quả kiểm tra</h2>
@@ -754,8 +759,35 @@
       let text = `${label} · ${fmtDT(file.lastModified && Date.now() - file.lastModified < 6e5 ? Date.now() : (file.lastModified || Date.now()))}`;
       while (ctx.measureText(text).width > w - fs && text.length > 10) text = text.slice(0, -2);
       ctx.fillText(text, Math.round(fs * 0.5), h - bh / 2);
-      return cv.toDataURL('image/jpeg', 0.72);
+      const data = cv.toDataURL('image/jpeg', 0.72);
+      const thumb = thumbOf(cv, w, h);
+      cv.width = cv.height = 0; // giải phóng bộ nhớ canvas ngay
+      return { data, thumb };
     } finally { URL.revokeObjectURL(url); }
+  }
+  function thumbOf(src, w, h) {
+    const sc = Math.min(1, 400 / Math.max(w, h));
+    const tc = document.createElement('canvas'); tc.width = Math.round(w * sc); tc.height = Math.round(h * sc);
+    tc.getContext('2d').drawImage(src, 0, 0, tc.width, tc.height);
+    const t = tc.toDataURL('image/jpeg', 0.7); tc.width = tc.height = 0;
+    return t;
+  }
+  // Tạo ảnh thu nhỏ cho ảnh chụp từ phiên bản trước (chưa có thumb), từng ảnh một, rồi lưu lại.
+  async function fillThumbs(inspId, list) {
+    for (const p of list) {
+      if (!cur || cur.id !== inspId) return;
+      if (!photoCache.has(p.id) || thumbCache.has(p.id)) continue;
+      try {
+        const img = await loadImage(p.data);
+        const t = thumbOf(img, img.naturalWidth, img.naturalHeight);
+        img.src = PH_BLANK;
+        if (!cur || cur.id !== inspId || !photoCache.has(p.id)) continue; // ảnh đã bị xóa trong lúc chờ
+        thumbCache.set(p.id, t);
+        await store.put('photos', Object.assign({}, p, { thumb: t }));
+        document.querySelectorAll(`img[data-ph="${p.id}"]`).forEach((el) => { el.src = t; });
+      } catch (e) { /* bỏ qua ảnh lỗi */ }
+      await new Promise((r) => setTimeout(r, 30));
+    }
   }
   async function addPhotos(c, files) {
     if (!files || !files.length) return;
@@ -765,10 +797,10 @@
     let n = 0;
     for (const file of files) {
       try {
-        const data = await processPhoto(file, label);
+        const { data, thumb } = await processPhoto(file, label);
         const id = uid();
-        await store.put('photos', { id, insp: cur.id, code: c, data, ts: Date.now() });
-        photoCache.set(id, data); r.ph.push(id); n++;
+        await store.put('photos', { id, insp: cur.id, code: c, data, thumb, ts: Date.now() });
+        photoCache.set(id, data); thumbCache.set(id, thumb); r.ph.push(id); n++;
       } catch (e) { /* skip */ }
     }
     openSet.add(c); touch(); refreshItem(c);
@@ -895,7 +927,7 @@
       case 'ph-del': {
         if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.innerHTML = `${I.trash} Bấm lần nữa để xóa`; return; }
         const r = R(c); r.ph = (r.ph || []).filter((x) => x !== b.dataset.id);
-        await store.del('photos', b.dataset.id); photoCache.delete(b.dataset.id);
+        await store.del('photos', b.dataset.id); photoCache.delete(b.dataset.id); thumbCache.delete(b.dataset.id);
         touch(); closeModal(); if (S.view === 'insp' && S.tab === 'punch') render(false); else refreshItem(c); toast('Đã xóa ảnh'); break;
       }
       case 'sec-na': {
@@ -914,7 +946,7 @@
       }
       case 'del-item': {
         if (!(await ask('Xóa hạng mục', 'Xóa hạng mục bổ sung này cùng ghi chú và ảnh của nó?', 'Xóa', true))) return;
-        for (const id of (cur.res[c] || {}).ph || []) { await store.del('photos', id); photoCache.delete(id); }
+        for (const id of (cur.res[c] || {}).ph || []) { await store.del('photos', id); photoCache.delete(id); thumbCache.delete(id); }
         cur.custom = cur.custom.filter((x) => x.c !== c); delete cur.res[c]; touch(); render(false); break;
       }
       case 'gps': {
