@@ -15,8 +15,9 @@
   theo thời hạn), **C** (khuyến nghị), kèm người chịu trách nhiệm và hạn khắc phục.
 - **Kết luận tự động** (đủ điều kiện / có điều kiện / chưa đủ điều kiện nhận bàn giao), có thể chỉnh tay.
 - **Chữ ký điện tử** 3 bên: Chủ đầu tư, bên bàn giao (EPC), bên nhận (O&M).
-- **Xuất biên bản**: In / Lưu **PDF** (A4, có quốc hiệu), **Excel .xlsx** (sheet Checklist + sheet Tồn tại),
-  file **HTML** gửi qua Zalo/email, **sao chép tóm tắt** dạng text.
+- **Xuất biên bản**: file **PDF** tạo ngay trên điện thoại, chạy cả khi offline (A4, có quốc hiệu, ảnh tồn tại khổ lớn
+  2 ảnh/hàng, đánh số trang), **Excel .xlsx** (sheet Checklist + sheet Tồn tại), file **HTML** gửi qua Zalo/email,
+  **sao chép tóm tắt** dạng text.
 - **Sao lưu / khôi phục** file `.json` (gồm cả ảnh) để chuyển máy hoặc lưu hồ sơ.
 
 ## Cài lên điện thoại
@@ -60,6 +61,8 @@ css/app.css           giao diện (sáng/tối, tối ưu đọc ngoài nắng)
 js/checklist.js       bộ hạng mục kiểm tra
 js/app.js             logic ứng dụng, lưu trữ, xuất biên bản
 js/xlsx.js            tạo file Excel .xlsx (không cần thư viện ngoài)
+js/pdf.js             tạo file PDF biên bản (jsPDF, font Noto Sans tiếng Việt)
+js/vendor/            thư viện PDF + font, chạy offline (xem LICENSES.md)
 sw.js                 service worker – chạy offline
 manifest.webmanifest  thông tin cài đặt PWA
 tools/build_artifact.py  đóng gói 1 file HTML để xem trước

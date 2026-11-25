@@ -6,6 +6,7 @@
 
   const CL = window.CHECKLIST;
   const ARTIFACT = !!window.__ARTIFACT__;
+  const STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   const $app = document.getElementById('app');
   const $modal = document.getElementById('modal-root');
   const $toast = document.getElementById('toast');
@@ -494,81 +495,95 @@
       <div class="eyebrow">Chữ ký xác nhận</div>
       <div class="sign-grid">${signBoxes}</div>
       <div class="eyebrow">Xuất biên bản</div>
-      ${ARTIFACT ? '<p class="note-box">Bạn đang mở bản xem trước, nơi in PDF và tải file bị chặn. Dùng "Sao chép" bên dưới, hoặc mở bản cài đặt (GitHub Pages) để xuất PDF / Excel đầy đủ.</p>' : ''}
+      ${ARTIFACT ? '<p class="note-box">Bạn đang mở bản xem trước, nơi tải file bị chặn. Dùng "Sao chép" bên dưới, hoặc mở bản cài đặt (GitHub Pages) để xuất PDF / Excel đầy đủ.</p>' : ''}
       <div class="btn-grid">
-        <button class="btn primary" data-act="print">${I.print} In / Lưu PDF</button>
+        ${ARTIFACT ? '' : `<button class="btn primary" data-act="export-pdf">${I.doc} Xuất PDF</button>`}
         <button class="btn" data-act="share-html">${I.share} Gửi biên bản (HTML)</button>
         <button class="btn" data-act="export-xlsx">${I.table} Xuất Excel (.xlsx)</button>
         <button class="btn" data-act="copy-summary">${I.copy} Sao chép tóm tắt</button>
         ${ARTIFACT ? `<button class="btn" data-act="copy-csv">${I.copy} Sao chép bảng (dán vào Excel)</button>` : ''}
         <button class="btn" data-act="export-json">${I.save} Sao lưu (.json)</button>
+        ${!ARTIFACT && !STANDALONE ? `<button class="btn" data-act="print">${I.print} In trực tiếp</button>` : ''}
       </div>
       <div class="eyebrow">Xem trước</div>
       <div class="report-wrap">${reportHTML()}</div>
     </main>${tabbar()}`;
   }
 
-  function reportHTML() {
-    const f = cur.info; const all = allItems(); const n = count(all); const v = verdictOf(n);
+  // Dữ liệu biên bản dùng chung cho xem trước, file HTML và file PDF.
+  function reportModel() {
+    const f = cur.info; const all = allItems(); const n = count(all);
     const P = PURPOSE[f.purpose] || PURPOSE.handover;
-    const res = (s) => s ? `<span class="r-${s}">${ST[s]}</span>` : '<span class="r-none">Chưa KT</span>';
-    const pairs = [
-      ['Tên dự án', f.project], ['Mã dự án', f.pcode], ['Loại dự án', CL.types[f.type]], ['Mục đích', P.label],
-      ['Địa điểm', f.address], ['Tọa độ GPS', f.gps], ['Công suất DC', f.dc ? f.dc + ' kWp' : ''], ['Công suất AC', f.ac ? f.ac + ' kW' : ''],
-      ['Tấm pin', f.module], ['Inverter', f.inverter], ['Cấp điện áp đấu nối', f.conn], ['Ngày COD', fmtDate(f.cod)],
-      ['Chủ đầu tư', f.owner], ['Bên bàn giao (EPC)', f.epc], ['Đơn vị O&M', f.om], ['Ngày kiểm tra', fmtDate(f.date)],
-      ['Người kiểm tra', f.inspector], ['Thời tiết', [f.weather, f.irr ? f.irr + ' W/m²' : '', f.temp ? f.temp + ' °C' : ''].filter(Boolean).join(' · ')]
-    ];
-    let info = '';
-    for (let i = 0; i < pairs.length; i += 2) info += `<tr><td>${pairs[i][0]}</td><td>${esc(pairs[i][1] || '')}</td><td>${pairs[i + 1][0]}</td><td>${esc(pairs[i + 1][1] || '')}</td></tr>`;
-    if (f.team) info += `<tr><td>Thành phần tham gia</td><td colspan="3" style="white-space:pre-line">${esc(f.team)}</td></tr>`;
-
+    const phs = (r) => (r.ph || []).filter((id) => photoCache.has(id)).map((id) => photoCache.get(id));
     const secs = CL.sections.map((s) => ({ s, its: secItems(s) })).filter((x) => x.its.length);
-    const sum = secs.map(({ s, its }) => { const c = count(its); return `<tr><td style="text-align:left">${s.id} – ${esc(s.title)}</td><td>${c.total}</td><td>${c.ok}</td><td>${c.nok}</td><td>${c.na}</td><td>${c.none}</td></tr>`; }).join('');
+    return {
+      title: P.title, om: f.om || '', project: f.project || '',
+      sub: `Dự án: ${f.project || ''}${f.dc ? ' – ' + f.dc + ' kWp' : ''} · Ngày ${fmtDate(f.date)}`,
+      info: [
+        ['Tên dự án', f.project], ['Mã dự án', f.pcode], ['Loại dự án', CL.types[f.type]], ['Mục đích', P.label],
+        ['Địa điểm', f.address], ['Tọa độ GPS', f.gps], ['Công suất DC', f.dc ? f.dc + ' kWp' : ''], ['Công suất AC', f.ac ? f.ac + ' kW' : ''],
+        ['Tấm pin', f.module], ['Inverter', f.inverter], ['Cấp điện áp đấu nối', f.conn], ['Ngày COD', fmtDate(f.cod)],
+        ['Chủ đầu tư', f.owner], ['Bên bàn giao (EPC)', f.epc], ['Đơn vị O&M', f.om], ['Ngày kiểm tra', fmtDate(f.date)],
+        ['Người kiểm tra', f.inspector], ['Thời tiết', [f.weather, f.irr ? f.irr + ' W/m²' : '', f.temp ? f.temp + ' °C' : ''].filter(Boolean).join(' · ')]
+      ].map(([a, b]) => [a, b || '']),
+      team: f.team || '',
+      summary: secs.map(({ s, its }) => { const c = count(its); return [`${s.id} – ${s.title}`, c.total, c.ok, c.nok, c.na, c.none].map(String); }),
+      totals: [n.total, n.ok, n.nok, n.na, n.none],
+      counts: n,
+      sevLine: `Tồn tại theo mức độ: A ${n.A} · B ${n.B} · C ${n.C}. A – ${SEV.A.short}: ${SEV.A.desc} B – ${SEV.B.short}: ${SEV.B.desc} C – ${SEV.C.short}: ${SEV.C.desc}`,
+      punch: punchItems().map((it, i) => {
+        const r = cur.res[it.c];
+        return { no: i + 1, c: it.c, t: it.t, note: r.note || '', sev: r.sev || 'B', resp: r.resp || '', due: fmtDate(r.due), val: r.val ? `${r.val} ${it.u || ''}`.trim() : '', photos: phs(r) };
+      }),
+      verdict: verdictOf(n).text, verdictNote: cur.verdict.note || '',
+      signs: SIGN_ROLES.map((r) => { const s = cur.sign[r.k] || {}; return { label: r.label, org: f[r.org] || '', name: s.name || '', title: s.title || '', img: s.img || '' }; }),
+      detail: secs.map(({ s, its }) => ({
+        title: `${s.id} – ${s.title}`,
+        rows: its.map((it) => {
+          const r = cur.res[it.c] || {};
+          return { c: it.c, t: it.t, s: r.s || '', res: r.s ? ST[r.s] : 'Chưa KT', sev: r.s === 'nok' ? (r.sev || 'B') : '', val: r.val ? `${r.val} ${it.u || ''}`.trim() : '', note: r.note || '' };
+        })
+      })),
+      appendix: all.map((it) => ({ it, r: cur.res[it.c] || {} })).filter(({ r }) => r.s !== 'nok' && phs(r).length)
+        .map(({ it, r }) => ({ c: it.c, t: it.t, note: r.note || '', photos: phs(r) })),
+      footer: `${f.project || ''} · ${P.title}`,
+      stamp: `Lập bằng PV Handover Checklist · bộ checklist ${cur.clv || CL.version} · xuất lúc ${fmtDT(Date.now())}`
+    };
+  }
 
-    const detail = secs.map(({ s, its }) => `<tr><th colspan="5">${s.id} – ${esc(s.title)}</th></tr>` + its.map((it) => {
-      const r = cur.res[it.c] || {};
-      return `<tr><td class="code">${it.c}</td><td>${esc(it.t)}</td><td class="c">${res(r.s)}${r.s === 'nok' ? ` <span class="sev ${r.sev || 'B'}">${r.sev || 'B'}</span>` : ''}</td><td class="c">${r.val ? esc(r.val) + ' ' + esc(it.u || '') : ''}</td><td>${esc(r.note || '')}</td></tr>`;
-    }).join('')).join('');
-
-    const punch = punchItems();
-    const punchRows = punch.map((it, i) => {
-      const r = cur.res[it.c];
-      const imgs = (r.ph || []).filter((id) => photoCache.has(id)).map((id) => `<img src="${photoCache.get(id)}" alt="">`).join('');
-      return `<tr><td class="c">${i + 1}</td><td class="code">${it.c}</td><td><b>${esc(it.t)}</b>${r.note ? `<br>${esc(r.note)}` : ''}${imgs ? `<div class="ph-row">${imgs}</div>` : ''}</td><td class="c"><span class="sev ${r.sev || 'B'}">${r.sev || 'B'}</span></td><td>${esc(r.resp || '')}</td><td class="c">${fmtDate(r.due)}</td></tr>`;
-    }).join('');
-
-    const other = all.filter((it) => { const r = cur.res[it.c] || {}; return r.s !== 'nok' && (r.ph || []).some((id) => photoCache.has(id)); });
-    const appendix = other.map((it) => {
-      const r = cur.res[it.c];
-      return `<tr><td class="code">${it.c}</td><td>${esc(it.t)}${r.note ? ` – <i>${esc(r.note)}</i>` : ''}<div class="ph-row">${r.ph.filter((id) => photoCache.has(id)).map((id) => `<img src="${photoCache.get(id)}" alt="">`).join('')}</div></td></tr>`;
-    }).join('');
-
-    const signs = SIGN_ROLES.map((r) => {
-      const s = cur.sign[r.k] || {};
-      const org = f[r.org] || '';
-      return `<div class="s"><b>${r.label.toUpperCase()}</b>${org ? `<div>${esc(org)}</div>` : ''}<div style="font-style:italic;color:#666">(Ký, ghi rõ họ tên)</div>${s.img ? `<img src="${s.img}" alt="">` : '<div class="sp"></div>'}<b>${esc(s.name || '')}</b>${s.title ? `<div>${esc(s.title)}</div>` : ''}</div>`;
-    }).join('');
-
+  function reportHTML(m) {
+    m = m || reportModel();
+    const res = (r) => `<span class="r-${r.s || 'none'}">${esc(r.res)}</span>${r.sev ? ` <span class="sev ${r.sev}">${r.sev}</span>` : ''}`;
+    let info = '';
+    for (let i = 0; i < m.info.length; i += 2) info += `<tr><td>${esc(m.info[i][0])}</td><td>${esc(m.info[i][1])}</td><td>${esc(m.info[i + 1][0])}</td><td>${esc(m.info[i + 1][1])}</td></tr>`;
+    if (m.team) info += `<tr><td>Thành phần tham gia</td><td colspan="3" style="white-space:pre-line">${esc(m.team)}</td></tr>`;
+    const grid = (photos) => `<div class="ph-grid">${photos.map((src) => `<img src="${src}" alt="">`).join('')}</div>`;
+    const fig = (cap, note, photos, sev) => `<div class="ph-block"><p class="ph-cap">${sev ? `<span class="sev ${sev}">${sev}</span> ` : ''}${esc(cap)}</p>${note ? `<p class="ph-note">${esc(note)}</p>` : ''}${grid(photos)}</div>`;
+    const n = m.counts;
     let k = 1;
+    const withPh = m.punch.filter((p) => p.photos.length);
     return `<div class="rpt">
-      <table style="border:0;margin-bottom:6px"><tr><td style="border:0;width:45%;text-align:center;font-weight:600">${esc(f.om || '')}</td><td style="border:0;text-align:center"><b>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</b><br><b>Độc lập – Tự do – Hạnh phúc</b></td></tr></table>
-      <h1>${P.title}</h1>
-      <p class="rpt-sub">Dự án: <b>${esc(f.project || '')}</b>${f.dc ? ` – ${esc(f.dc)} kWp` : ''} · Ngày ${fmtDate(f.date)}</p>
+      <table style="border:0;margin-bottom:6px"><tr><td style="border:0;width:45%;text-align:center;font-weight:600">${esc(m.om)}</td><td style="border:0;text-align:center"><b>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</b><br><b>Độc lập – Tự do – Hạnh phúc</b></td></tr></table>
+      <h1>${esc(m.title)}</h1>
+      <p class="rpt-sub">${esc(m.sub)}</p>
       <h2>${k++}. Thông tin chung</h2><table class="info">${info}</table>
       <h2>${k++}. Tổng hợp kết quả</h2>
-      <table class="sum"><tr><th style="text-align:left">Nhóm hạng mục</th><th>Tổng</th><th>Đạt</th><th>Không đạt</th><th>N/A</th><th>Chưa KT</th></tr>${sum}
-        <tr><th style="text-align:left">Tổng cộng</th><th>${n.total}</th><th>${n.ok}</th><th>${n.nok}</th><th>${n.na}</th><th>${n.none}</th></tr></table>
+      <table class="sum"><tr><th style="text-align:left">Nhóm hạng mục</th><th>Tổng</th><th>Đạt</th><th>Không đạt</th><th>N/A</th><th>Chưa KT</th></tr>
+        ${m.summary.map((r) => `<tr><td style="text-align:left">${esc(r[0])}</td>${r.slice(1).map((v) => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        <tr><th style="text-align:left">Tổng cộng</th>${m.totals.map((v) => `<th>${v}</th>`).join('')}</tr></table>
       <p style="margin:6px 0 0">Tồn tại theo mức độ: <span class="sev A">A</span> ${n.A} · <span class="sev B">B</span> ${n.B} · <span class="sev C">C</span> ${n.C}. (A – ${SEV.A.short}: ${SEV.A.desc} B – ${SEV.B.short}: ${SEV.B.desc} C – ${SEV.C.short}: ${SEV.C.desc})</p>
       <h2>${k++}. Danh sách tồn tại</h2>
-      ${punch.length ? `<table><tr><th class="c">TT</th><th>Mã</th><th>Nội dung tồn tại</th><th class="c">Mức</th><th>Trách nhiệm</th><th class="c">Hạn</th></tr>${punchRows}</table>` : '<p>Không ghi nhận tồn tại.</p>'}
+      ${m.punch.length ? `<table><tr><th class="c">TT</th><th>Mã</th><th>Nội dung tồn tại</th><th class="c">Mức</th><th>Trách nhiệm</th><th class="c">Hạn</th><th class="c">Ảnh</th></tr>
+        ${m.punch.map((p) => `<tr><td class="c">${p.no}</td><td class="code">${esc(p.c)}</td><td><b>${esc(p.t)}</b>${p.note ? `<br>${esc(p.note)}` : ''}${p.val ? `<br>Giá trị đo: ${esc(p.val)}` : ''}</td><td class="c"><span class="sev ${p.sev}">${p.sev}</span></td><td>${esc(p.resp)}</td><td class="c">${esc(p.due)}</td><td class="c">${p.photos.length || ''}</td></tr>`).join('')}</table>` : '<p>Không ghi nhận tồn tại.</p>'}
+      ${withPh.length ? `<h2>${k++}. Hình ảnh tồn tại</h2>${withPh.map((p) => fig(`${p.no}. ${p.c} – ${p.t}`, p.note, p.photos, p.sev)).join('')}` : ''}
       <h2>${k++}. Kết luận</h2>
-      <div class="verdict-p"><b>${esc(v.text)}</b>${cur.verdict.note ? `<div style="white-space:pre-line;margin-top:4px">${esc(cur.verdict.note)}</div>` : ''}</div>
-      <div class="signs">${signs}</div>
+      <div class="verdict-p"><b>${esc(m.verdict)}</b>${m.verdictNote ? `<div style="white-space:pre-line;margin-top:4px">${esc(m.verdictNote)}</div>` : ''}</div>
+      <div class="signs">${m.signs.map((s) => `<div class="s"><b>${esc(s.label.toUpperCase())}</b>${s.org ? `<div>${esc(s.org)}</div>` : ''}<div style="font-style:italic;color:#666">(Ký, ghi rõ họ tên)</div>${s.img ? `<img src="${s.img}" alt="">` : '<div class="sp"></div>'}<b>${esc(s.name)}</b>${s.title ? `<div>${esc(s.title)}</div>` : ''}</div>`).join('')}</div>
       <h2>${k++}. Chi tiết kết quả kiểm tra</h2>
-      <table><tr><th>Mã</th><th>Nội dung kiểm tra</th><th class="c">Kết quả</th><th class="c">Giá trị đo</th><th>Ghi chú</th></tr>${detail}</table>
-      ${appendix ? `<h2>${k++}. Phụ lục hình ảnh</h2><table>${appendix}</table>` : ''}
-      <p class="foot">Lập bằng PV Handover Checklist · bộ checklist ${esc(cur.clv || CL.version)} · xuất lúc ${fmtDT(Date.now())}</p>
+      <table><tr><th>Mã</th><th>Nội dung kiểm tra</th><th class="c">Kết quả</th><th class="c">Giá trị đo</th><th>Ghi chú</th></tr>
+        ${m.detail.map((sec) => `<tr><th colspan="5">${esc(sec.title)}</th></tr>` + sec.rows.map((r) => `<tr><td class="code">${esc(r.c)}</td><td>${esc(r.t)}</td><td class="c">${res(r)}</td><td class="c">${esc(r.val)}</td><td>${esc(r.note)}</td></tr>`).join('')).join('')}</table>
+      ${m.appendix.length ? `<h2>${k++}. Phụ lục hình ảnh</h2>${m.appendix.map((a) => fig(`${a.c} – ${a.t}`, a.note, a.photos)).join('')}` : ''}
+      <p class="foot">${esc(m.stamp)}</p>
     </div>`;
   }
 
@@ -677,6 +692,38 @@
     });
     return lines.join('\n');
   }
+  let pdfOut = null;
+  async function exportPDF() {
+    openModal('<h2>Đang tạo PDF…</h2><p class="muted small" style="margin:0">Biên bản nhiều ảnh có thể mất vài giây. Vui lòng không tắt màn hình.</p>');
+    try {
+      await flush();
+      if (!window.PVHO_PDF) await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'js/pdf.js'; sc.onload = res; sc.onerror = () => rej(new Error('Không tải được bộ tạo PDF')); document.head.appendChild(sc); });
+      const blob = await window.PVHO_PDF.build(reportModel());
+      pdfOut = { blob, name: baseName() + '.pdf' };
+      const file = new File([blob], pdfOut.name, { type: 'application/pdf' });
+      const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+      openModal(`<h2>PDF đã sẵn sàng</h2><p class="muted small" style="margin:0">${esc(pdfOut.name)} · ${(blob.size / 1048576).toFixed(1)} MB</p>
+        <div class="form-section">
+          ${canShare ? `<button class="btn primary block" data-act="pdf-share">${I.share} Chia sẻ / Lưu vào Tệp, Zalo, Mail…</button>` : ''}
+          <button class="btn ${canShare ? '' : 'primary'} block" data-act="pdf-download">${I.save} Tải về máy</button>
+          <button class="btn block" data-act="pdf-open">${I.doc} Mở xem</button>
+          <button class="btn ghost block" data-act="close">Đóng</button>
+        </div>`);
+    } catch (e) {
+      openModal(`<h2>Chưa tạo được PDF</h2><p style="margin:0">${esc(e && e.message ? e.message : e)}</p><p class="muted small" style="margin:0">Nếu đang offline lần đầu sau khi cập nhật, hãy mở ứng dụng khi có mạng một lần. Trong lúc chờ có thể dùng "Gửi biên bản (HTML)".</p><button class="btn block" data-act="close">Đóng</button>`);
+    }
+  }
+  async function pdfShare() {
+    if (!pdfOut) return;
+    try { await navigator.share({ files: [new File([pdfOut.blob], pdfOut.name, { type: 'application/pdf' })], title: pdfOut.name }); }
+    catch (e) { if (!e || e.name !== 'AbortError') { download(pdfOut.blob, pdfOut.name); toast('Đã tải file: ' + pdfOut.name); } }
+  }
+  function pdfOpen() {
+    if (!pdfOut) return;
+    const w = window.open(URL.createObjectURL(pdfOut.blob), '_blank');
+    if (!w) { download(pdfOut.blob, pdfOut.name); toast('Đã tải file: ' + pdfOut.name); }
+  }
+
   async function doPrint() {
     $print.innerHTML = reportHTML();
     await Promise.all([...$print.querySelectorAll('img')].map((img) => img.complete ? 0 : new Promise((r) => { img.onload = img.onerror = r; })));
@@ -877,6 +924,11 @@
       case 'copy-csv': copyText(csvText('\t'), 'Đã sao chép – dán vào Excel / Google Sheets'); break;
       case 'share-html': shareOrDownload(new Blob([standaloneHTML()], { type: 'text/html' }), baseName() + '.html', PURPOSE[cur.info.purpose || 'handover'].title); break;
       case 'print': doPrint(); break;
+      case 'export-pdf': exportPDF(); break;
+      case 'pdf-share': pdfShare(); break;
+      case 'pdf-download': if (pdfOut) { download(pdfOut.blob, pdfOut.name); toast('Đã tải file: ' + pdfOut.name); } break;
+      case 'pdf-open': pdfOpen(); break;
+      case 'reload': await flush(); location.reload(); break;
       case 'copy-summary': copyText(summaryText(false), 'Đã sao chép tóm tắt'); break;
       case 'copy-punch': copyText(summaryText(true), 'Đã sao chép danh sách tồn tại'); break;
       case 'sign': signModal(v); break;
@@ -935,8 +987,11 @@
 .rpt .code{font-family:var(--f-mono);white-space:nowrap;font-size:11px}
 .rpt .r-ok{color:#17803f;font-weight:700}.rpt .r-nok{color:#c3281f;font-weight:700}.rpt .r-na{color:#66748a}.rpt .r-none{color:#a06a00}
 .rpt .info td:nth-child(odd){width:20%;background:#f6f8fb;font-weight:600}
-.rpt .ph-row{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
-.rpt .ph-row img{width:31%;max-width:220px;height:auto;border:1px solid #ccc}
+.rpt .ph-block{margin:8px 0 12px;break-inside:avoid}
+.rpt .ph-cap{margin:0 0 2px;font-weight:700}
+.rpt .ph-note{margin:0 0 4px;color:#444}
+.rpt .ph-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.rpt .ph-grid img{width:100%;height:auto;max-height:360px;object-fit:contain;background:#f3f5f8;border:1px solid #ccc;break-inside:avoid}
 .rpt .sev{display:inline-block;padding:0 6px;border-radius:4px;color:#fff;font-weight:700;font-family:var(--f-mono)}
 .rpt .sev.A{background:#c3281f}.rpt .sev.B{background:#c26a00}.rpt .sev.C{background:#1f5fc2}
 .rpt .verdict-p{border:2px solid #123a6b;padding:8px 10px;margin-top:6px}
@@ -952,7 +1007,15 @@
     await store.open();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }
     if (!ARTIFACT && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.register('sw.js').catch(() => {});
+      // Có bản mới: báo để người dùng tải lại. Dữ liệu đã lưu trong máy không bị ảnh hưởng.
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || document.getElementById('update-bar')) return;
+        const bar = document.createElement('div'); bar.id = 'update-bar'; bar.className = 'update-bar';
+        bar.innerHTML = '<span>Đã có phiên bản mới của ứng dụng.</span><button class="btn sun" data-act="reload">Cập nhật</button>';
+        document.body.appendChild(bar);
+      });
     }
     loadHome();
   })();
