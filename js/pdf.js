@@ -182,12 +182,35 @@
     table({
       head: [['Nhóm hạng mục', 'Tổng', 'Đạt', 'Không đạt', 'N/A', 'Chưa KT']],
       body: m.summary.flatMap((r, i) => (i === 0 || m.summary[i - 1].part !== r.part
-        ? [[{ content: fx(`PHẦN ${r.part} – ${r.partTitle}`).toUpperCase(), colSpan: 6, styles: { fontStyle: 'bold', fillColor: INDIGO, textColor: [255, 255, 255] } }]] : [])
+        ? [[{ content: fx(`${m.partWord || 'PHẦN'} ${r.part} – ${r.partTitle}`).toUpperCase(), colSpan: 6, styles: { fontStyle: 'bold', fillColor: INDIGO, textColor: [255, 255, 255] } }]] : [])
         .concat([r.cells.map((v, k) => k === 0 ? { content: fx(v), styles: { cellPadding: { top: 1.6, bottom: 1.6, left: 4, right: 1.6 } } } : fx(v))])).concat([[{ content: 'Tổng cộng', styles: { fontStyle: 'bold' } }].concat(m.totals.map((v) => ({ content: String(v), styles: { fontStyle: 'bold' } })))]),
       columnStyles: { 1: c, 2: c, 3: { halign: 'center', cellWidth: 21 }, 4: c, 5: c },
       styles: { font: 'NS', fontSize: 8.6, cellPadding: 1.15, lineColor: GRID, lineWidth: 0.2, textColor: [25, 25, 35], overflow: 'linebreak', valign: 'middle' }
     });
     para(m.sevLine, { size: 9, color: [70, 70, 90], gap: 2 });
+
+    /* ----- bảo trì quý: tổng hợp theo mẫu checklist A–H, theo dõi tồn tại đợt trước ----- */
+    if (m.form) {
+      heading(`${k++}. Tổng hợp theo mẫu checklist quý`);
+      table({
+        head: [['TT', 'Hạng mục công việc', 'Phương pháp', 'Kết quả', 'Ghi chú']],
+        body: m.form.map((r) => r.head
+          ? [{ content: r.k, styles: { fontStyle: 'bold', halign: 'center', fillColor: [251, 247, 230], textColor: [90, 69, 0] } }, { content: fx(r.t), colSpan: 4, styles: { fontStyle: 'bold', fillColor: [251, 247, 230], textColor: [90, 69, 0] } }]
+          : [{ content: r.k, styles: { halign: 'center' } }, fx(r.t), fx(r.m), { content: fx(r.res), styles: { textColor: STC[r.s || 'none'], fontStyle: 'bold', halign: 'center' } }, fx(r.note)]),
+        columnStyles: { 0: { cellWidth: 11 }, 2: { cellWidth: 30 }, 3: { cellWidth: 21 }, 4: { cellWidth: 50 } }
+      });
+      if (m.evMissing) para(`Có ${m.evMissing} hạng mục "Đạt" chưa kèm ảnh hoặc giá trị đo theo yêu cầu.`, { size: 9, color: [160, 106, 0], gap: 2 });
+    }
+    if (m.prev) {
+      heading(`${k++}. Theo dõi tồn tại ${m.prev.label}`);
+      table({
+        head: [['Mã', 'Nội dung tồn tại', 'Mức', 'Đợt này']],
+        body: m.prev.rows.map((r) => [fx(r.c), fx(r.text),
+          { content: r.sev, styles: { fillColor: SEVC[r.sev] || SEVC.B, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' } },
+          { content: fx(r.now), styles: { textColor: STC[r.s || 'none'], fontStyle: 'bold', halign: 'center' } }]),
+        columnStyles: { 0: { cellWidth: 19 }, 2: { cellWidth: 11 }, 3: { cellWidth: 30 } }
+      });
+    }
 
     /* ----- 3. danh sách tồn tại ----- */
     heading(`${k++}. Danh sách tồn tại`);
@@ -216,7 +239,7 @@
     if (nL.length) write(nL, M + 5, 10, false, [30, 30, 40]);
     y = by + boxH + 7;
 
-    const sw = CW / 3;
+    const sw = CW / Math.max(m.signs.length, 2);
     const sigImgs = await Promise.all(m.signs.map((s) => s.img ? imgInfo(s.img) : null));
     m.signs.forEach((s, i) => {
       const cx = M + sw * i + sw / 2; let yy = y;
@@ -242,7 +265,7 @@
     let lastPart = '';
     for (const sec of m.detail) {
       if (sec.part !== lastPart) {
-        body.push([{ content: fx(`PHẦN ${sec.part} – ${sec.partTitle}`).toUpperCase(), colSpan: 5, styles: { fontStyle: 'bold', fillColor: INDIGO, textColor: [255, 255, 255] } }]);
+        body.push([{ content: fx(`${m.partWord || 'PHẦN'} ${sec.part} – ${sec.partTitle}`).toUpperCase(), colSpan: 5, styles: { fontStyle: 'bold', fillColor: INDIGO, textColor: [255, 255, 255] } }]);
         lastPart = sec.part;
       }
       body.push([{ content: fx(sec.title), colSpan: 5, styles: { fontStyle: 'bold', fillColor: TINT, textColor: INDIGO } }]);

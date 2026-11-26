@@ -433,3 +433,35 @@ canvas.sigpad { width: 100%; height: 200px; background: #fff; border-radius: 10p
   .rpt h2 { break-after: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .rpt .sev, .rpt th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---------- bảo trì quý: hồ sơ thiết bị, nhãn đầu việc, đối chiếu đợt trước ---------- */
+.sec-code.long { font-size: 11px; letter-spacing: -.02em; }
+.sec-row h3 + .sub { margin-top: 2px; }
+.asset-list { display: flex; flex-direction: column; gap: 6px; }
+.asset-list .part-head .icon-btn.sm { width: 34px; height: 34px; color: var(--muted); border: 1px solid var(--line); border-radius: 9px; }
+.asset-list .part-head .icon-btn.sm svg { width: 18px; height: 18px; }
+.asset-row {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left;
+  padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: inherit; min-height: 48px;
+}
+.asset-row b { display: block; font-size: 14px; font-weight: 600; }
+.asset-row .sub { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.asset-row svg { width: 18px; height: 18px; color: var(--muted); }
+.asset-id {
+  font-family: var(--f-mono); font-size: 11.5px; font-weight: 600; min-width: 44px; text-align: center;
+  padding: 5px 6px; border-radius: 7px; background: var(--brand); color: var(--brand-ink);
+}
+.item-code .tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line);
+  font-family: var(--f-body); font-size: 11px; font-weight: 600; letter-spacing: 0; color: var(--muted); vertical-align: 1px;
+}
+.item-code .tag.off { border-color: var(--sev-b); color: var(--sev-b); }
+.ev-miss { margin: 0; font-size: 13px; font-weight: 600; color: var(--sev-b); }
+.prev-box { margin: 0; font-size: 13px; padding: 8px 10px; border-radius: 10px; border-left: 4px solid var(--sev-b); background: var(--surface-2); }
+.prev-val { margin: 0; font-size: 12.5px; color: var(--muted); }
+.note-box.warn { border-left: 4px solid var(--sev-b); color: var(--ink); }
+.note-box ul { margin: 6px 0 0; padding-left: 18px; }
+.note-box li + li { margin-top: 4px; }
+button.link { background: none; border: 0; padding: 4px 2px; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; min-height: 32px; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }
+.check input { width: 22px; height: 22px; accent-color: var(--brand); }

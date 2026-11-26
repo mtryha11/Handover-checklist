@@ -1,10 +1,12 @@
-/* PV Handover Checklist – ứng dụng checklist nhận bàn giao O&M điện mặt trời.
+/* Raitek O&M Checklist – checklist bảo trì quý và nhận bàn giao O&M điện mặt trời.
  * Không cần server: dữ liệu lưu trong IndexedDB của trình duyệt trên điện thoại.
  */
 (function () {
   'use strict';
 
   const CL = window.CHECKLIST;
+  const PM = window.PM;
+  const isPM = (x) => { x = x === undefined ? cur : x; return !!(x && x.info && x.info.purpose === 'pm'); };
   const ARTIFACT = !!window.__ARTIFACT__;
   const STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   const $app = document.getElementById('app');
@@ -38,22 +40,35 @@
     pen: sv('<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
     trash: sv('<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>'),
     dup: sv('<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V4a2 2 0 0 1 2-2h10"/>'),
+    up: sv('<path d="M12 19V5M5 12l7-7 7 7"/>'),
+    bolt: sv('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>'),
     sun: sv('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>')
   };
   const LOGO = window.RAITEK_LOGO ? `<img class="brand-mark" src="${window.RAITEK_LOGO}" alt="Raitek">` : '';
 
   /* ---------------- constants ---------------- */
   const ST = { ok: 'Đạt', nok: 'Không đạt', na: 'N/A' };
-  const SEV = {
-    A: { short: 'Nghiêm trọng', desc: 'Ảnh hưởng an toàn hoặc khả năng phát điện. Phải khắc phục trước khi nhận bàn giao.' },
-    B: { short: 'Quan trọng', desc: 'Khắc phục trong thời hạn cam kết sau bàn giao (ví dụ 30 ngày).' },
-    C: { short: 'Khuyến nghị', desc: 'Cải thiện, theo dõi thêm; không ảnh hưởng việc nhận bàn giao.' }
+  const SEVS = {
+    std: {
+      A: { short: 'Nghiêm trọng', desc: 'Ảnh hưởng an toàn hoặc khả năng phát điện. Phải khắc phục trước khi nhận bàn giao.' },
+      B: { short: 'Quan trọng', desc: 'Khắc phục trong thời hạn cam kết sau bàn giao (ví dụ 30 ngày).' },
+      C: { short: 'Khuyến nghị', desc: 'Cải thiện, theo dõi thêm; không ảnh hưởng việc nhận bàn giao.' }
+    },
+    pm: {
+      A: { short: 'Nghiêm trọng', desc: 'Nguy cơ mất an toàn hoặc đang mất sản lượng. Xử lý ngay hoặc báo chủ đầu tư trong ngày.' },
+      B: { short: 'Quan trọng', desc: 'Xử lý trước đợt bảo trì kế tiếp.' },
+      C: { short: 'Theo dõi', desc: 'Chưa ảnh hưởng vận hành; theo dõi và kiểm tra lại ở đợt sau.' }
+    }
   };
+  const sevOf = () => SEVS[isPM() ? 'pm' : 'std'];
   const PURPOSE = {
     handover: { label: 'Nhận bàn giao O&M', title: 'Biên bản kiểm tra hiện trạng và nhận bàn giao O&M' },
     audit: { label: 'Audit hiện trạng', title: 'Biên bản audit hiện trạng hệ thống điện mặt trời' },
-    periodic: { label: 'Kiểm tra định kỳ', title: 'Biên bản kiểm tra định kỳ hệ thống điện mặt trời' }
+    periodic: { label: 'Kiểm tra định kỳ', title: 'Biên bản kiểm tra định kỳ hệ thống điện mặt trời' },
+    pm: { label: 'Bảo trì quý', title: 'Biên bản bảo trì bảo dưỡng định kỳ quý hệ thống điện mặt trời' }
   };
+  const PERIODS = { Q1: 'Quý 1', Q2: 'Quý 2', Q3: 'Quý 3', Q4: 'Quý 4' };
+  const periodLabel = (f) => `${PERIODS[f.period] || ''}${f.year ? '/' + f.year : ''}`;
   const VERDICT = {
     handover: {
       ok: 'Đủ điều kiện nhận bàn giao O&M',
@@ -67,15 +82,30 @@
     }
   };
   VERDICT.periodic = VERDICT.audit;
-  const SIGN_ROLES = [
+  VERDICT.pm = {
+    ok: 'Chấp nhận – hoàn thành bảo trì quý, không có tồn tại',
+    cond: 'Chấp nhận với ý kiến – hoàn thành bảo trì quý, còn tồn tại cần theo dõi / xử lý',
+    no: 'Không chấp nhận – còn tồn tại mức A phải xử lý ngay'
+  };
+  const SIGN_STD = [
     { k: 'owner', label: 'Đại diện Chủ đầu tư', org: 'owner' },
     { k: 'giver', label: 'Đại diện bên bàn giao (EPC)', org: 'epc' },
     { k: 'receiver', label: 'Đại diện bên nhận (O&M)', org: 'om' }
   ];
+  const SIGN_PM = [
+    { k: 'receiver', label: 'Đại diện Nhà thầu O&M', org: 'om' },
+    { k: 'owner', label: 'Đại diện Chủ đầu tư', org: 'owner' }
+  ];
+  const signRoles = () => (isPM() ? SIGN_PM : SIGN_STD);
+  // Trường thông tin: pm = 1 chỉ cho bảo trì quý, pm = 0 chỉ cho bàn giao / audit; lp = nhãn riêng cho bảo trì quý.
+  const infoFields = () => INFO_FIELDS.filter((d) => d.pm === undefined || !!d.pm === isPM()).map((d) => (isPM() && d.lp ? Object.assign({}, d, { l: d.lp }) : d));
   const INFO_FIELDS = [
     { k: 'project', l: 'Tên dự án', req: 1, span: 1 },
     { k: 'pcode', l: 'Mã dự án' },
-    { k: 'purpose', l: 'Mục đích kiểm tra', type: 'select', opts: Object.fromEntries(Object.entries(PURPOSE).map(([k, v]) => [k, v.label])) },
+    { k: 'purpose', l: 'Mục đích kiểm tra', type: 'select', pm: 0, opts: Object.fromEntries(Object.entries(PURPOSE).filter(([k]) => k !== 'pm').map(([k, v]) => [k, v.label])) },
+    { k: 'period', l: 'Đợt bảo trì', type: 'select', pm: 1, opts: PERIODS },
+    { k: 'year', l: 'Năm', im: 'numeric', pm: 1 },
+    { k: 'scope', l: 'Phạm vi hạng mục', type: 'select', pm: 1, span: 1, opts: PM.scopes },
     { k: 'type', l: 'Loại dự án', type: 'select', opts: CL.types },
     { k: 'address', l: 'Địa điểm', span: 1 },
     { k: 'gps', l: 'Tọa độ GPS', gps: 1 },
@@ -85,11 +115,11 @@
     { k: 'module', l: 'Tấm pin (hãng / model / số lượng)', span: 1 },
     { k: 'inverter', l: 'Inverter (hãng / model / số lượng)', span: 1 },
     { k: 'owner', l: 'Chủ đầu tư' },
-    { k: 'epc', l: 'Tổng thầu EPC / bên bàn giao' },
-    { k: 'om', l: 'Đơn vị O&M nhận bàn giao' },
-    { k: 'cod', l: 'Ngày COD', type: 'date' },
-    { k: 'date', l: 'Ngày kiểm tra', type: 'date', req: 1 },
-    { k: 'inspector', l: 'Người kiểm tra' },
+    { k: 'epc', l: 'Tổng thầu EPC / bên bàn giao', pm: 0 },
+    { k: 'om', l: 'Đơn vị O&M nhận bàn giao', lp: 'Nhà thầu O&M' },
+    { k: 'cod', l: 'Ngày COD', type: 'date', pm: 0 },
+    { k: 'date', l: 'Ngày kiểm tra', lp: 'Ngày thực hiện', type: 'date', req: 1 },
+    { k: 'inspector', l: 'Người kiểm tra', lp: 'Trưởng nhóm thực hiện' },
     { k: 'team', l: 'Thành phần tham gia', type: 'textarea', span: 1, ph: 'Họ tên – chức vụ – đơn vị' },
     { k: 'weather', l: 'Thời tiết', ph: 'Nắng / mây / mưa' },
     { k: 'irr', l: 'Bức xạ lúc kiểm tra (W/m²)', im: 'decimal' },
@@ -181,8 +211,23 @@
   const hasData = (c) => { const r = cur.res[c]; return !!(r && (r.s || r.note || r.val || (r.ph && r.ph.length))); };
   const applies = (it) => (!it.s || it.s.split(' ').includes(cur.info.type)) && (!it.x || hasData(it.c));
   const secItems = (sec) => sec.items.filter(applies).concat((cur.custom || []).filter((x) => x.sec === sec.id).map((x) => Object.assign({ g: 'Hạng mục bổ sung' }, x)));
-  const allItems = () => CL.sections.flatMap((sec) => secItems(sec).map((it) => Object.assign({ secId: sec.id }, it)));
-  const secById = (id) => CL.sections.find((s) => s.id === id);
+  // Bàn giao / audit: danh sách cố định. Bảo trì quý: nhân từ bộ đầu việc × hồ sơ thiết bị của dự án.
+  let secMemo = { key: '', v: null };
+  function SECS() {
+    if (!isPM()) return CL.sections;
+    const key = `${cur.id}|${cur.site && cur.site.rev}|${cur.info.scope}`;
+    if (secMemo.key !== key) secMemo = { key, v: PM.build(cur.site || { zones: [], assets: [] }, cur.info.scope) };
+    return secMemo.v;
+  }
+  const allItems = () => SECS().flatMap((sec) => secItems(sec).map((it) => Object.assign({ secId: sec.id }, it)));
+  const secById = (id) => SECS().find((s) => s.id === id);
+  const partWord = () => (isPM() ? 'Khu vực' : 'Phần');
+  // Bảo trì quý: hạng mục "Đạt" phải kèm bằng chứng (ảnh, giá trị đo) nếu đầu việc yêu cầu.
+  const evMissing = (it) => {
+    if (!isPM()) return '';
+    const r = cur.res[it.c] || {}; if (r.s !== 'ok') return '';
+    return [it.p && !(r.ph && r.ph.length) ? 'ảnh' : '', it.u && !String(r.val || '').trim() ? 'giá trị đo' : ''].filter(Boolean).join(' và ');
+  };
   const R = (c) => cur.res[c] || (cur.res[c] = {});
   function count(items) {
     const n = { ok: 0, nok: 0, na: 0, none: 0, total: items.length, A: 0, B: 0, C: 0 };
@@ -201,12 +246,101 @@
     return { key: v, text: VERDICT[cur.info.purpose || 'handover'][v] };
   }
 
-  function newInspection() {
-    return {
-      id: uid(), created: Date.now(), updated: Date.now(), clv: CL.version,
-      info: { project: '', purpose: 'handover', type: 'roof', date: todayISO(), inspector: settings.inspector, om: settings.om },
+  function newInspection(purpose = 'handover') {
+    const d = {
+      id: uid(), created: Date.now(), updated: Date.now(), clv: purpose === 'pm' ? PM.version : CL.version,
+      info: { project: '', purpose, type: 'roof', date: todayISO(), inspector: settings.inspector, om: settings.om },
       res: {}, custom: [], sign: {}, verdict: { v: '', note: '' }
     };
+    if (purpose === 'pm') {
+      const now = new Date();
+      d.info.period = 'Q' + (Math.floor(now.getMonth() / 3) + 1); d.info.year = String(now.getFullYear());
+      d.info.scope = PM.defaultScope(d.info.period); d.info.om = settings.om || 'RAITEK';
+      d.site = PM.quick();
+    }
+    return d;
+  }
+
+  /* ---------------- hồ sơ thiết bị dự án (bảo trì quý) ---------------- */
+  // Thư viện hồ sơ lưu trên máy: lập một lần cho mỗi dự án, dùng lại mỗi quý.
+  const SITE_INFO = ['project', 'pcode', 'type', 'address', 'gps', 'conn', 'dc', 'ac', 'module', 'inverter', 'owner'];
+  const sitesAll = () => lsGet('pvho-sites', []);
+  function siteRemember() {
+    if (!isPM() || !cur.info.project.trim()) return;
+    const info = {}; SITE_INFO.forEach((k) => { if (cur.info[k]) info[k] = cur.info[k]; });
+    const list = sitesAll().filter((x) => x.info.project !== info.project);
+    list.unshift({ info, zones: cur.site.zones, assets: cur.site.assets, notes: cur.site.notes });
+    lsSet('pvho-sites', list.slice(0, 200));
+  }
+  function siteApply(src) {
+    Object.assign(cur.info, src.info || {});
+    cur.site = PM.normalize({ zones: (src.zones || []).slice(), assets: JSON.parse(JSON.stringify(src.assets || [])), notes: (src.notes || []).slice() });
+  }
+  function siteChanged() { cur.site = PM.normalize(cur.site); if (S.view !== 'info') { touch(); siteRemember(); } render(false); }
+  const assetHasData = (id) => Object.keys(cur.res).some((c) => c.startsWith(id + '-') && hasData(c));
+  function siteCard(isNew) {
+    const st = cur.site; const saved = sitesAll();
+    const tally = PM.kinds.map((K) => { const n = st.assets.filter((a) => a.k === K.k).length; return n && !['pre', 'end'].includes(K.k) ? `<span class="chip">${n} ${esc(K.one.toLowerCase())}</span>` : ''; }).join('');
+    const rows = st.zones.map((z, zi) => `<div class="part-head"><span class="part-id">${zi + 1}</span><span class="grow">${esc(z)}</span>${zi ? `<button class="icon-btn sm" data-act="zone-up" data-v="${zi}" aria-label="Đưa khu vực lên trước">${I.up}</button>` : ''}</div>` +
+      st.assets.filter((a) => a.z === z).map((a) => `<button class="asset-row" data-act="site-edit" data-id="${esc(a.id)}"><span class="asset-id">${esc(a.id)}</span><span style="min-width:0"><b>${esc(a.n)}</b>${a.d ? `<span class="sub">${esc(a.d)}</span>` : ''}</span>${I.pen}</button>`).join('')).join('');
+    return `<section class="card pad form-section"><h2>Hồ sơ thiết bị dự án</h2>
+      <p class="muted small" style="margin:0">Checklist được nhân ra cho từng thiết bị dưới đây, xếp theo khu vực đúng lộ trình đi tại hiện trường. Lập một lần từ bản vẽ hoàn công, các quý sau dùng lại.</p>
+      ${isNew && saved.length ? `<div class="field"><label for="site-pick">Dự án đã lưu trên máy</label><select id="site-pick" data-site-pick><option value="">— Chọn để điền sẵn thông tin và thiết bị —</option>${saved.map((x, i) => `<option value="${i}">${esc(x.info.project)}</option>`).join('')}</select></div>` : ''}
+      <div class="chips">${tally}<span class="chip sun">${allItems().length} đầu việc</span></div>
+      ${st.notes.length ? `<div class="note-box warn"><b>Cần xác nhận tại hiện trường</b><ul>${st.notes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+      <div class="asset-list">${rows}</div>
+      <div class="btn-grid">
+        <button class="btn" data-act="site-add">${I.plus} Thêm thiết bị</button>
+        <button class="btn" data-act="site-quick">${I.list} Lập nhanh theo số lượng</button>
+        <label class="btn">${I.upload} Nhập hồ sơ (.json)<input type="file" accept=".json,application/json" data-site-import hidden></label>
+        <button class="btn" data-act="site-export">${I.save} Xuất hồ sơ (.json)</button>
+      </div></section>`;
+  }
+  function siteQuickModal() {
+    const st = cur.site;
+    openModal(`<h2>Lập nhanh theo số lượng</h2><p class="muted small" style="margin:0">Tạo lại toàn bộ danh mục thiết bị theo số lượng từng loại. Tên, khu vực và mô tả sửa sau từng thiết bị.</p>
+      <div class="two">${PM.quickFields.map(([k, l]) => `<div class="field"><label for="qk-${k}">${esc(l)}</label><input class="inp" id="qk-${k}" inputmode="numeric" value="${st.assets.filter((a) => a.k === k).length}"></div>`).join('')}</div>
+      <div class="modal-actions"><button class="btn" data-act="close">Hủy</button><button class="btn primary" data-act="site-quick-ok">Tạo danh mục</button></div>`);
+  }
+  function siteAssetModal(id) {
+    const a = id ? cur.site.assets.find((x) => x.id === id) : null;
+    const K = a ? PM.kindOf(a.k) : null;
+    openModal(`<h2>${a ? esc(a.id) + ' – sửa thiết bị' : 'Thêm thiết bị'}</h2>
+      ${a ? '' : `<div class="field"><label for="as-k">Loại thiết bị</label><select class="inp" id="as-k">${PM.kinds.filter((x) => !['pre', 'end'].includes(x.k)).map((x) => `<option value="${x.k}">${esc(x.title)}</option>`).join('')}</select></div>`}
+      <div class="field"><label for="as-n">Tên thiết bị</label><input class="inp" id="as-n" value="${esc(a ? a.n : '')}" placeholder="VD: Inverter 05 – SUN2000-100KTL"></div>
+      <div class="field"><label for="as-z">Khu vực (điểm dừng trên lộ trình)</label><input class="inp" id="as-z" list="as-zl" value="${esc(a ? a.z : '')}" placeholder="Để trống = khu vực mặc định của loại thiết bị"><datalist id="as-zl">${cur.site.zones.map((z) => `<option value="${esc(z)}">`).join('')}</datalist></div>
+      <div class="field"><label for="as-d">Mô tả (model, số string, vị trí…)</label><textarea class="inp" id="as-d">${esc(a ? a.d : '')}</textarea></div>
+      ${K && K.opts ? Object.entries(K.opts).map(([k, l]) => `<label class="check"><input type="checkbox" data-opt="${k}" ${a.opt.includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('') : ''}
+      <div class="modal-actions" ${a ? 'style="grid-template-columns:1fr 1fr 1fr"' : ''}>${a ? `<button class="btn danger" data-act="site-del" data-id="${esc(a.id)}">Xóa</button>` : ''}<button class="btn" data-act="close">Hủy</button><button class="btn primary" data-act="site-save" data-id="${esc(a ? a.id : '')}">Lưu</button></div>`);
+  }
+  function siteExport() {
+    const info = {}; SITE_INFO.forEach((k) => { if (cur.info[k]) info[k] = cur.info[k]; });
+    const data = JSON.stringify({ app: 'raitek-pm-site', v: 1, info, zones: cur.site.zones, assets: cur.site.assets, notes: cur.site.notes }, null, 2);
+    shareOrDownload(new Blob([data], { type: 'application/json' }), `ho-so_${slug(cur.info.project)}.json`, 'Hồ sơ thiết bị ' + cur.info.project);
+  }
+  async function siteImport(file) {
+    try {
+      const d = JSON.parse(await file.text());
+      if (d.app !== 'raitek-pm-site' || !Array.isArray(d.assets)) throw new Error('bad');
+      if (Object.keys(cur.res).some(hasData) && !(await ask('Nhập hồ sơ thiết bị', 'Danh mục thiết bị hiện tại sẽ được thay bằng hồ sơ trong file. Kết quả đã ghi cho thiết bị không còn trong hồ sơ mới sẽ bị ẩn.', 'Thay thế'))) return;
+      siteApply(d); siteChanged(); toast(`Đã nhập hồ sơ: ${cur.site.assets.length} thiết bị`);
+    } catch (e) { toast('File không đúng định dạng hồ sơ thiết bị'); }
+  }
+  // Đợt kế tiếp: giữ hồ sơ thiết bị, mang theo tồn tại chưa đóng và số đo của đợt này để đối chiếu.
+  function nextPeriod() {
+    const d = newInspection('pm'); const f = cur.info;
+    const q = (parseInt(String(f.period || 'Q1').slice(1), 10) || 1) % 4 + 1;
+    d.info = Object.assign({}, f, { date: todayISO(), period: 'Q' + q, year: String((parseInt(f.year, 10) || new Date().getFullYear()) + (q === 1 ? 1 : 0)), weather: '', irr: '', temp: '' });
+    d.info.scope = PM.defaultScope(d.info.period);
+    d.site = JSON.parse(JSON.stringify(cur.site)); d.custom = JSON.parse(JSON.stringify(cur.custom || []));
+    const prev = { label: periodLabel(f), date: f.date, items: {}, vals: {} };
+    for (const it of allItems()) {
+      const r = cur.res[it.c] || {};
+      if (r.s === 'nok') prev.items[it.c] = { t: it.t, sev: r.sev || 'B', note: r.note || '', resp: r.resp || '', due: r.due || '' };
+      if (String(r.val || '').trim()) prev.vals[it.c] = String(r.val).trim();
+    }
+    d.prev = prev;
+    return d;
   }
 
   /* ---------------- navigation ---------------- */
@@ -233,6 +367,7 @@
     const it = await store.get('insp', id);
     if (!it) return toast('Không tìm thấy biên bản');
     cur = it; cur.res = cur.res || {}; cur.custom = cur.custom || []; cur.sign = cur.sign || {}; cur.verdict = cur.verdict || { v: '', note: '' };
+    if (isPM()) cur.site = PM.normalize(cur.site || PM.quick());
     photoCache.clear(); thumbCache.clear(); openSet.clear(); hintSet.clear();
     const photos = await store.photosOf(id);
     photoGeo.clear();
@@ -253,7 +388,7 @@
     const n = count(allItems());
     const t = (k, ic, l, badge) => `<button class="tab ${S.tab === k && (S.view === 'insp' || (k === 'check' && S.view === 'sec')) ? 'on' : ''}" data-act="tab" data-v="${k}">${ic}<span>${l}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</button>`;
     return `<nav class="tabbar" aria-label="Điều hướng"><div class="tabbar-in">
-      ${t('check', I.list, 'Hạng mục')}${t('punch', I.flag, 'Tồn tại', n.nok)}${t('report', I.doc, 'Biên bản')}${t('info', I.info, 'Thông tin')}
+      ${t('check', I.list, isPM() ? 'Lộ trình' : 'Hạng mục')}${t('punch', I.flag, 'Tồn tại', n.nok)}${t('report', I.doc, 'Biên bản')}${t('info', I.info, 'Thông tin')}
     </div></nav>`;
   }
   function bar(n) {
@@ -287,21 +422,26 @@
       const p = PURPOSE[x.info.purpose] || PURPOSE.handover;
       return `<button class="card insp-card" data-act="open" data-id="${x.id}">
         <div class="row"><h3 class="grow">${esc(x.info.project || 'Chưa đặt tên')}</h3><span class="chip sun">${n.pct}%</span></div>
-        <div class="insp-meta"><span>${esc(p.label)}</span><span>${esc(CL.types[x.info.type] || '')}</span>${x.info.dc ? `<span>${esc(x.info.dc)} kWp</span>` : ''}<span>${fmtDate(x.info.date)}</span></div>
+        <div class="insp-meta"><span>${esc(p.label)}${x.info.purpose === 'pm' ? ' · ' + esc(periodLabel(x.info)) : ''}</span><span>${esc(CL.types[x.info.type] || '')}</span>${x.info.dc ? `<span>${esc(x.info.dc)} kWp</span>` : ''}<span>${fmtDate(x.info.date)}</span></div>
         ${bar(n)}
         <div class="chips"><span class="chip ok">${n.ok} đạt</span><span class="chip nok">${n.nok} không đạt</span>${n.A ? `<span class="chip nok">${n.A} mức A</span>` : ''}<span class="chip">${n.none} chưa kiểm</span></div>
       </button>`;
     }).join('');
-    return `${topbar({ title: 'Raitek PV Handover', sub: 'Checklist nhận bàn giao O&M điện mặt trời', back: false, actions: `<button class="icon-btn" data-act="settings" aria-label="Cài đặt">${I.gear}</button>` })}
+    return `${topbar({ title: 'Raitek O&M', sub: 'Bảo trì quý và nhận bàn giao điện mặt trời', back: false, actions: `<button class="icon-btn" data-act="settings" aria-label="Cài đặt">${I.gear}</button>` })}
     <main class="wrap no-tabs">
       <section class="card hero-card">
-        <h2>Bắt đầu một đợt kiểm tra</h2>
+        <h2>Bảo trì bảo dưỡng định kỳ quý</h2>
+        <p class="muted small" style="margin:0">${PM.countTasks()} đầu việc theo ${PM.kinds.length} loại thiết bị, nhân ra cho từng inverter, tủ điện, khu mái của dự án và xếp theo lộ trình đi. Thiết bị nào chưa làm xong hiện ngay trên danh sách; biên bản tổng hợp theo mẫu checklist quý A–H.</p>
+        <button class="btn sun block" data-act="new-pm">${I.plus} Tạo đợt bảo trì quý</button>
+      </section>
+      <section class="card hero-card">
+        <h2>Nhận bàn giao / audit hiện trạng</h2>
         <p class="muted small" style="margin:0">${CL.sections.filter((s) => s.items.some((i) => !i.x)).length} nhóm, ${CL.sections.reduce((a, s) => a + s.items.filter((i) => !i.x).length, 0)} hạng mục theo form đánh giá chất lượng công trình: thang, lan can, sàn thao tác, tấm pin, rail, trạm thời tiết, tiếp địa, nước vệ sinh, nhà inverter, inverter, cáp, máng cáp, tủ điện, giám sát, biển báo, PCCC, trạm biến áp, hồ sơ. Ảnh chụp được đóng dấu mã hạng mục và thời gian.</p>
-        <button class="btn sun block" data-act="new">${I.plus} Tạo biên bản mới</button>
+        <button class="btn block" data-act="new">${I.plus} Tạo biên bản bàn giao / audit</button>
       </section>
       <div class="row"><span class="eyebrow grow">Biên bản đã lưu (${S.list.length})</span>
-        <label class="btn ghost" style="min-height:38px;font-size:13px">${I.upload} Nhập file sao lưu<input type="file" accept=".json,application/json" data-import hidden></label></div>
-      ${cards || `<div class="card empty">${I.doc}<p>Chưa có biên bản nào trên máy này.</p><button class="btn" data-act="demo">Mở biên bản ví dụ</button></div>`}
+        <label class="btn ghost" style="min-height:38px;font-size:13px">${I.upload} Nhập file sao lưu / hồ sơ<input type="file" accept=".json,application/json" data-import hidden></label></div>
+      ${cards || `<div class="card empty">${I.doc}<p>Chưa có biên bản nào trên máy này.</p><div class="btn-grid"><button class="btn" data-act="demo-pm">Ví dụ bảo trì quý</button><button class="btn" data-act="demo">Ví dụ bàn giao</button></div></div>`}
       ${!store.db ? '<p class="note-box">Trình duyệt đang chặn bộ nhớ lưu trữ. Dữ liệu chỉ tồn tại tới khi đóng trang – hãy xuất file sao lưu.</p>' : ''}
       <p class="muted small" style="text-align:center">Dữ liệu chỉ lưu trên điện thoại này. Xuất file sao lưu (.json) để chuyển máy hoặc lưu trữ.</p>
     </main>`;
@@ -319,21 +459,22 @@
       if (d.gps) input = `<div class="row" style="flex-wrap:nowrap">${input}<button class="btn" data-act="gps" aria-label="Lấy tọa độ GPS" style="flex:none">${I.pin}</button></div>`;
       return `<div class="field ${d.span ? 'span2' : ''}"><label for="${id}">${esc(d.l)}${d.req ? ' *' : ''}</label>${input}</div>`;
     };
-    const body = `<div class="card pad form-section"><div class="form-grid">${INFO_FIELDS.map(field).join('')}</div>
-      <p class="muted small" style="margin:0">Loại dự án quyết định hạng mục hiển thị (VD: áp mái có kiểm tra chống thấm, lối đi trên mái; mặt đất có móng cọc, hàng rào, thoát nước).</p></div>`;
+    const pm = isPM();
+    const body = `${pm && isNew ? siteCard(true) : ''}<div class="card pad form-section"><div class="form-grid">${infoFields().map(field).join('')}</div>
+      <p class="muted small" style="margin:0">${pm ? 'Phạm vi hạng mục tự chọn theo quý: Quý 2 thêm hạng mục 6 tháng, Quý 4 thêm cả hạng mục hằng năm. Có thể đổi tay.' : 'Loại dự án quyết định hạng mục hiển thị (VD: áp mái có kiểm tra chống thấm, lối đi trên mái; mặt đất có móng cọc, hàng rào, thoát nước).'}</p></div>${pm && !isNew ? siteCard(false) : ''}`;
     if (isNew) {
-      return `${topbar({ title: 'Biên bản mới', sub: 'Thông tin dự án' })}
-      <main class="wrap no-tabs">${body}<button class="btn sun block" data-act="create">${I.check} Tạo và bắt đầu kiểm tra</button></main>`;
+      return `${topbar({ title: pm ? 'Đợt bảo trì quý mới' : 'Biên bản mới', sub: 'Thông tin dự án' })}
+      <main class="wrap no-tabs">${body}<button class="btn sun block" data-act="create">${I.check} ${pm ? 'Tạo và bắt đầu bảo trì' : 'Tạo và bắt đầu kiểm tra'}</button></main>`;
     }
     return `${topbar({ title: cur.info.project || 'Chưa đặt tên', sub: 'Thông tin dự án', progress: count(allItems()).pct })}
     <main class="wrap">${body}
       <section class="card pad form-section"><h2>Quản lý biên bản</h2>
         <div class="btn-grid">
           <button class="btn" data-act="export-json">${I.save} Sao lưu (.json)</button>
-          <button class="btn" data-act="dup">${I.dup} Dùng làm mẫu</button>
+          <button class="btn" data-act="dup">${I.dup} ${pm ? 'Tạo đợt quý kế tiếp' : 'Dùng làm mẫu'}</button>
           <button class="btn danger" data-act="delete">${I.trash} Xóa biên bản</button>
         </div>
-        <p class="muted small" style="margin:0">"Dùng làm mẫu" tạo biên bản mới giữ nguyên thông tin dự án và hạng mục bổ sung, kết quả kiểm tra để trống – dùng cho lần kiểm tra lại.</p>
+        <p class="muted small" style="margin:0">${pm ? '"Tạo đợt quý kế tiếp" giữ nguyên hồ sơ thiết bị, mang theo các tồn tại chưa đóng và số đo của đợt này để đối chiếu.' : '"Dùng làm mẫu" tạo biên bản mới giữ nguyên thông tin dự án và hạng mục bổ sung, kết quả kiểm tra để trống – dùng cho lần kiểm tra lại.'}</p>
       </section>
     </main>${tabbar()}`;
   }
@@ -346,13 +487,15 @@
       if (S.filter === 'none' && r.s) return false;
       if (S.filter === 'nok' && r.s !== 'nok') return false;
       if (S.filter === 'photo' && !(r.ph && r.ph.length)) return false;
+      if (S.filter === 'ev' && !evMissing(it)) return false;
+      if (S.filter === 'off' && !it.off) return false;
       if (q && !(it.c.toLowerCase().includes(q) || it.t.toLowerCase().includes(q) || (r.note || '').toLowerCase().includes(q))) return false;
       return true;
     });
   }
   function filterChips() {
     const f = (k, l) => `<button class="fbtn ${S.filter === k ? 'on' : ''}" data-act="filter" data-v="${k}">${l}</button>`;
-    return `<div class="filters" role="group" aria-label="Lọc">${f('all', 'Tất cả')}${f('none', 'Chưa kiểm')}${f('nok', 'Không đạt')}${f('photo', 'Có ảnh')}</div>`;
+    return `<div class="filters" role="group" aria-label="Lọc">${f('all', 'Tất cả')}${f('none', isPM() ? 'Chưa làm' : 'Chưa kiểm')}${f('nok', 'Không đạt')}${isPM() ? f('ev', 'Thiếu bằng chứng') + f('off', 'Cần cắt điện') : ''}${f('photo', 'Có ảnh')}</div>`;
   }
   function viewOverview() {
     const all = allItems(); const n = count(all);
@@ -363,19 +506,19 @@
       list = items.length ? `<div class="items">${items.map((it) => itemHTML(it, true)).join('')}</div>` : '<div class="card empty"><p>Không có hạng mục phù hợp.</p></div>';
     } else {
       let lastPart = '';
-      list = `<div class="sec-list">${CL.sections.map((sec) => {
+      list = `<div class="sec-list">${SECS().map((sec) => {
         const its = secItems(sec); if (!its.length) return '';
         const c = count(its);
         const head = sec.part !== lastPart ? `<div class="part-head"><span class="part-id">${esc(sec.part)}</span><span>${esc(sec.partTitle)}</span></div>` : '';
         lastPart = sec.part;
         return head + `<button class="card sec-row" data-act="sec" data-v="${sec.id}">
-          <span class="sec-code ${c.none === 0 ? 'done' : ''}">${sec.id}</span>
-          <span style="min-width:0"><h3>${esc(sec.title)}</h3>
+          <span class="sec-code ${c.none === 0 ? 'done' : ''} ${sec.id.length > 4 ? 'long' : ''}">${esc(sec.id)}</span>
+          <span style="min-width:0"><h3>${esc(sec.title)}</h3>${sec.sub ? `<span class="sub">${esc(sec.sub)}</span>` : ''}
             <span class="sub"><span>${c.done}/${c.total}</span>${c.nok ? `<span style="color:var(--nok);font-weight:600">${c.nok} không đạt</span>` : ''}${c.na ? `<span>${c.na} N/A</span>` : ''}</span>${bar(c)}</span>
           ${I.chev}</button>`;
       }).join('')}</div>`;
     }
-    return `${topbar({ title: cur.info.project || 'Chưa đặt tên', sub: `${(PURPOSE[cur.info.purpose] || PURPOSE.handover).label} · ${fmtDate(cur.info.date)} · ${n.pct}% hoàn thành`, progress: n.pct })}
+    return `${topbar({ title: cur.info.project || 'Chưa đặt tên', sub: `${(PURPOSE[cur.info.purpose] || PURPOSE.handover).label} · ${isPM() ? periodLabel(cur.info) + ' · ' : ''}${fmtDate(cur.info.date)} · ${n.pct}% hoàn thành`, progress: n.pct })}
     <main class="wrap">
       ${stats(n)}
       ${syncBar()}
@@ -389,11 +532,12 @@
   function viewSection() {
     const sec = secById(S.sec); const its = secItems(sec); const n = count(its);
     const shown = filterItems(its);
-    const visibleSecs = CL.sections.filter((s) => secItems(s).length);
+    const visibleSecs = SECS().filter((s) => secItems(s).length);
     const vi = visibleSecs.findIndex((s) => s.id === sec.id);
     const prev = visibleSecs[vi - 1], next = visibleSecs[vi + 1];
-    return `${topbar({ title: sec.title, sub: `Phần ${sec.part} · ${sec.partTitle} · ${n.done}/${n.total} hạng mục`, progress: count(allItems()).pct })}
+    return `${topbar({ title: sec.title, sub: `${partWord()} ${sec.part} · ${sec.partTitle} · ${n.done}/${n.total} hạng mục`, progress: count(allItems()).pct })}
     <main class="wrap">
+      ${sec.sub ? `<p class="note-box">${esc(sec.sub)}</p>` : ''}
       <div class="sec-head">${stats(n)}${filterChips()}</div>
       <div class="items">${groupedItems(shown) || '<div class="card empty"><p>Không có hạng mục phù hợp bộ lọc.</p></div>'}</div>
       <div class="btn-grid">
@@ -419,6 +563,10 @@
   }
   function itemHTML(it, showSec) {
     const c = it.c; const r = cur.res[c] || {}; const st = r.s || '';
+    const SEV = sevOf();
+    const pv = cur.prev || {}; const pvIt = pv.items && pv.items[c]; const pvVal = pv.vals && pv.vals[c];
+    const tags = [it.f && PM.freq[it.f] ? `<span class="tag">${PM.freq[it.f]}</span>` : '', it.off ? `<span class="tag off">Cắt điện</span>` : '', it.p ? `<span class="tag">Ảnh</span>` : ''].join('');
+    const miss = evMissing(it);
     const open = st === 'nok' || openSet.has(c);
     const hintOn = hintSet.has(c);
     const nph = (r.ph || []).length;
@@ -437,16 +585,18 @@
       </div>` : '';
     const moreLabel = [r.note ? 'có ghi chú' : '', nph ? `${nph} ảnh` : ''].filter(Boolean).join(', ');
     return `<article class="card item ${st ? 'st-' + st : ''}" id="it-${c}">
-      <div class="item-head"><div style="min-width:0"><div class="item-code">${c}${it.custom ? ' · bổ sung' : ''}${it.x ? ' · đã bỏ khỏi checklist' : ''}${secName ? ` · <span class="sec-name">${esc(secName)}</span>` : ''}</div><p class="item-t">${esc(it.t)}</p></div>
+      <div class="item-head"><div style="min-width:0"><div class="item-code">${c}${it.custom ? ' · bổ sung' : ''}${it.x ? ' · đã bỏ khỏi checklist' : ''}${secName ? ` · <span class="sec-name">${esc(secName)}</span>` : ''}${tags}</div><p class="item-t">${esc(it.t)}</p></div>
         <div class="item-tools">${it.h ? `<button class="info-btn ${hintOn ? 'on' : ''}" data-act="hint" data-c="${c}" aria-label="Tiêu chí đánh giá" aria-expanded="${hintOn}">i</button>` : ''}<button class="info-btn cam-quick" data-act="cam-open" data-c="${c}" aria-label="Chụp ảnh hạng mục ${c}">${I.cam}${nph ? `<span>${nph}</span>` : ''}</button>
           <input type="file" accept="image/*" capture="environment" data-photo="${c}" data-src="cam" id="capin-${c}" hidden></div></div>
       ${it.h && hintOn ? `<p class="hint">${esc(it.h)}</p>` : ''}
+      ${pvIt ? `<p class="prev-box"><b>${esc(pv.label)}: không đạt (${esc(pvIt.sev)})</b>${pvIt.note ? ' – ' + esc(pvIt.note) : ''}. Kiểm tra lại và xác nhận đã xử lý.</p>` : ''}
       <div class="seg" role="group" aria-label="Kết quả">
         <button class="s-ok ${st === 'ok' ? 'on' : ''}" data-act="st" data-v="ok" data-c="${c}" aria-pressed="${st === 'ok'}">${I.check} Đạt</button>
         <button class="s-nok ${st === 'nok' ? 'on' : ''}" data-act="st" data-v="nok" data-c="${c}" aria-pressed="${st === 'nok'}">${I.x} Không đạt</button>
         <button class="s-na ${st === 'na' ? 'on' : ''}" data-act="st" data-v="na" data-c="${c}" aria-pressed="${st === 'na'}">N/A</button>
       </div>
-      ${it.u ? `<div class="meas"><label for="v-${c}">Giá trị đo</label><input class="inp mono" id="v-${c}" data-f="val" data-c="${c}" value="${esc(r.val || '')}" placeholder="VD: 2,1 hoặc 820–835"><span class="unit">${esc(it.u)}</span></div>` : ''}
+      ${it.u ? `<div class="meas"><label for="v-${c}">Giá trị đo</label><input class="inp mono" id="v-${c}" data-f="val" data-c="${c}" value="${esc(r.val || '')}" placeholder="${pvVal ? 'Đợt trước: ' + esc(pvVal) : 'VD: 2,1 hoặc 820–835'}"><span class="unit">${esc(it.u)}</span></div>${pvVal ? `<p class="prev-val">${esc(pv.label)}: <b>${esc(pvVal)} ${esc(it.u)}</b></p>` : ''}` : ''}
+      ${miss ? `<p class="ev-miss">Thiếu bằng chứng: ${miss}</p>` : ''}
       ${detail}
       ${!open ? `<button class="more-btn" data-act="more" data-c="${c}">${I.cam} Ghi chú / ảnh${moreLabel ? ` (${moreLabel})` : ''}</button>` : (st !== 'nok' ? `<button class="more-btn" data-act="less" data-c="${c}">Thu gọn</button>` : '')}
     </article>`;
@@ -472,7 +622,15 @@
       .sort((a, b) => order[cur.res[a.c].sev || 'B'] - order[cur.res[b.c].sev || 'B']);
   }
   function viewPunch() {
-    const items = punchItems(); const n = count(allItems());
+    const items = punchItems(); const n = count(allItems()); const SEV = sevOf();
+    const pv = cur.prev && Object.keys(cur.prev.items || {}).length ? cur.prev : null;
+    const prevCards = pv ? Object.entries(pv.items).map(([c, x]) => {
+      const s = (cur.res[c] || {}).s; const it = findItem(c);
+      const stt = !it ? ['na', 'Không còn trong checklist'] : s === 'ok' ? ['ok', 'Đã xử lý'] : s === 'nok' ? ['nok', 'Còn tồn tại'] : s === 'na' ? ['na', 'N/A'] : ['', 'Chưa kiểm tra lại'];
+      return `<article class="card punch ${esc(x.sev)}"><div class="row"><span class="sev-tag ${esc(x.sev)}">${esc(x.sev)}</span><span class="item-code grow">${esc(c)}</span><span class="chip ${stt[0]}">${stt[1]}</span></div>
+        <p class="item-t" style="margin:0">${esc(x.note || x.t)}</p>
+        ${it ? `<button class="more-btn" data-act="goto" data-c="${esc(c)}" data-sec="${esc(it.secId)}">${I.pen} Kiểm tra lại trong checklist</button>` : ''}</article>`;
+    }).join('') : '';
     const cards = items.map((it) => {
       const r = cur.res[it.c]; const sv = r.sev || 'B';
       return `<article class="card punch ${sv}">
@@ -488,6 +646,7 @@
     return `${topbar({ title: 'Danh sách tồn tại', sub: `${n.nok} tồn tại · A: ${n.A} · B: ${n.B} · C: ${n.C}`, progress: n.pct })}
     <main class="wrap">
       <section class="card pad legend">${['A', 'B', 'C'].map((k) => `<div><span class="sev-tag ${k}">${k}</span><span><b>${SEV[k].short}.</b> ${SEV[k].desc}</span></div>`).join('')}</section>
+      ${pv ? `<div class="eyebrow">Tồn tại chuyển từ ${esc(pv.label)} (${Object.keys(pv.items).length})</div>${prevCards}<div class="eyebrow">Tồn tại đợt này (${items.length})</div>` : ''}
       ${cards || `<div class="card empty">${I.check}<p>Chưa ghi nhận tồn tại nào.</p></div>`}
       ${items.length ? `<button class="btn block" data-act="copy-punch">${I.copy} Sao chép danh sách tồn tại (gửi Zalo / email)</button>` : ''}
     </main>${tabbar()}`;
@@ -497,7 +656,10 @@
   function viewReport() {
     const n = count(allItems()); const v = verdictOf(n); const auto = autoVerdict(n);
     const purpose = cur.info.purpose || 'handover';
-    const signBoxes = SIGN_ROLES.map((r) => {
+    const pm = isPM();
+    const undone = pm ? SECS().map((sc) => ({ sc, c: count(secItems(sc)) })).filter((x) => x.c.none) : [];
+    const ev = pm ? allItems().filter(evMissing) : [];
+    const signBoxes = signRoles().map((r) => {
       const s = cur.sign[r.k] || {};
       return `<div class="card sign-box"><div class="eyebrow">${esc(r.label)}</div>
         <div class="sig">${s.img ? `<img src="${s.img}" alt="Chữ ký">` : '<span class="muted small">Chưa ký</span>'}</div>
@@ -506,7 +668,8 @@
     }).join('');
     return `${topbar({ title: 'Biên bản', sub: cur.info.project, progress: n.pct })}
     <main class="wrap">
-      ${n.none ? `<p class="note-box" style="color:var(--sev-b)"><b>Còn ${n.none} hạng mục chưa kiểm tra.</b> Biên bản vẫn xuất được, các mục này ghi "Chưa KT".</p>` : ''}
+      ${n.none ? `<p class="note-box" style="color:var(--sev-b)"><b>Còn ${n.none} hạng mục chưa kiểm tra.</b> Biên bản vẫn xuất được, các mục này ghi "Chưa KT".${undone.length ? `<br>Chưa xong: ${undone.map((x) => `<button class="link" data-act="sec" data-v="${esc(x.sc.id)}">${esc(x.sc.id)} (${x.c.done}/${x.c.total})</button>`).join(' ')}` : ''}</p>` : ''}
+      ${ev.length ? `<p class="note-box" style="color:var(--sev-b)"><b>${ev.length} hạng mục "Đạt" còn thiếu ảnh hoặc giá trị đo.</b> <button class="link" data-act="ev-list">Xem danh sách</button></p>` : ''}
       <section class="verdict ${v.key}">
         <span class="eyebrow">Kết luận</span><b>${esc(v.text)}</b>
         <span class="small muted">Đề xuất tự động theo tồn tại: ${n.A} mức A, ${n.B} mức B, ${n.C} mức C.</span>
@@ -520,6 +683,7 @@
       ${ARTIFACT ? '<p class="note-box">Bạn đang mở bản xem trước, nơi tải file bị chặn. Dùng "Sao chép" bên dưới, hoặc mở bản cài đặt (GitHub Pages) để xuất PDF / Excel đầy đủ.</p>' : ''}
       <div class="btn-grid">
         ${ARTIFACT ? '' : `<button class="btn primary" data-act="export-pdf">${I.doc} Xuất PDF</button>`}
+        ${pm ? `<button class="btn" data-act="copy-form">${I.copy} Sao chép bảng mẫu A–H</button>` : ''}
         <button class="btn" data-act="share-html">${I.share} Gửi biên bản (HTML)</button>
         <button class="btn" data-act="export-xlsx">${I.table} Xuất Excel (.xlsx)</button>
         <button class="btn" data-act="copy-summary">${I.copy} Sao chép tóm tắt</button>
@@ -538,11 +702,23 @@
     const P = PURPOSE[f.purpose] || PURPOSE.handover;
     // Xem trước trong ứng dụng dùng ảnh thu nhỏ; file PDF / HTML dùng ảnh gốc.
     const phs = (r) => (r.ph || []).filter((id) => photoCache.has(id)).map((id) => opts.thumbs ? (thumbCache.get(id) || PH_BLANK) : photoCache.get(id));
-    const secs = CL.sections.map((s) => ({ s, its: secItems(s) })).filter((x) => x.its.length);
+    const secs = SECS().map((s) => ({ s, its: secItems(s) })).filter((x) => x.its.length);
+    const pm = isPM(); const SEV = sevOf();
+    const prev = pm && cur.prev && Object.keys(cur.prev.items || {}).length ? {
+      label: cur.prev.label,
+      rows: Object.entries(cur.prev.items).map(([c, x]) => { const st = (cur.res[c] || {}).s; return { c, text: x.note || x.t, sev: x.sev, s: st || '', now: st === 'ok' ? 'Đã xử lý' : st === 'nok' ? 'Còn tồn tại' : st === 'na' ? 'N/A' : 'Chưa kiểm tra lại' }; })
+    } : null;
     return {
-      title: P.title, om: f.om || '', project: f.project || '',
-      sub: `Dự án: ${f.project || ''}${f.dc ? ' – ' + f.dc + ' kWp' : ''} · Ngày ${fmtDate(f.date)}`,
-      info: [
+      title: P.title, om: f.om || '', project: f.project || '', partWord: partWord().toUpperCase(), sev: SEV, form: pm ? formRollup() : null, prev,
+      evMissing: pm ? all.filter(evMissing).length : 0,
+      sub: `Dự án: ${f.project || ''}${f.dc ? ' – ' + f.dc + ' kWp' : ''} · ${pm ? periodLabel(f) + ' · ' : ''}Ngày ${fmtDate(f.date)}`,
+      info: pm ? [
+        ['Tên dự án', f.project], ['Mã dự án', f.pcode], ['Đợt bảo trì', periodLabel(f)], ['Phạm vi hạng mục', PM.scopes[f.scope] || PM.scopes.q],
+        ['Địa điểm', f.address], ['Tọa độ GPS', f.gps], ['Công suất DC', f.dc ? f.dc + ' kWp' : ''], ['Công suất AC', f.ac ? f.ac + ' kW' : ''],
+        ['Tấm pin', f.module], ['Inverter', f.inverter], ['Chủ đầu tư', f.owner], ['Nhà thầu O&M', f.om],
+        ['Ngày thực hiện', fmtDate(f.date)], ['Trưởng nhóm thực hiện', f.inspector], ['Số thiết bị / đầu việc', `${cur.site.assets.length} / ${n.total}`],
+        ['Thời tiết', [f.weather, f.irr ? f.irr + ' W/m²' : '', f.temp ? f.temp + ' °C' : ''].filter(Boolean).join(' · ')]
+      ].map(([a, b]) => [a, b || '']) : [
         ['Tên dự án', f.project], ['Mã dự án', f.pcode], ['Loại dự án', CL.types[f.type]], ['Mục đích', P.label],
         ['Địa điểm', f.address], ['Tọa độ GPS', f.gps], ['Công suất DC', f.dc ? f.dc + ' kWp' : ''], ['Công suất AC', f.ac ? f.ac + ' kW' : ''],
         ['Tấm pin', f.module], ['Inverter', f.inverter], ['Cấp điện áp đấu nối', f.conn], ['Ngày COD', fmtDate(f.cod)],
@@ -559,7 +735,7 @@
         return { no: i + 1, c: it.c, t: it.t, text: (r.note || '').trim() || 'Không đạt: ' + it.t, note: r.note || '', sev: r.sev || 'B', resp: r.resp || '', due: fmtDate(r.due), val: r.val ? `${r.val} ${it.u || ''}`.trim() : '', photos: phs(r) };
       }),
       verdict: verdictOf(n).text, verdictNote: cur.verdict.note || '',
-      signs: SIGN_ROLES.map((r) => { const s = cur.sign[r.k] || {}; return { label: r.label, org: f[r.org] || '', name: s.name || '', title: s.title || '', img: s.img || '' }; }),
+      signs: signRoles().map((r) => { const s = cur.sign[r.k] || {}; return { label: r.label, org: f[r.org] || '', name: s.name || '', title: s.title || '', img: s.img || '' }; }),
       detail: secs.map(({ s, its }) => ({
         title: `${s.id} – ${s.title}`, part: s.part, partTitle: s.partTitle,
         rows: its.map((it) => {
@@ -570,8 +746,19 @@
       appendix: all.map((it) => ({ it, r: cur.res[it.c] || {} })).filter(({ r }) => r.s !== 'nok' && phs(r).length)
         .map(({ it, r }) => ({ c: it.c, t: it.t, note: r.note || '', photos: phs(r) })),
       footer: `${f.project || ''} · ${P.title}`,
-      stamp: `Raitek PV Handover Checklist · bộ checklist ${cur.clv || CL.version} · xuất lúc ${fmtDT(Date.now())}`
+      stamp: `Raitek O&M Checklist · bộ checklist ${cur.clv || CL.version} · xuất lúc ${fmtDT(Date.now())}`
     };
+  }
+  // Gộp kết quả từng thiết bị về các dòng của mẫu checklist quý đang ký với chủ đầu tư (A1, B1…H2).
+  function formRollup() {
+    const all = allItems();
+    return PM.form.flatMap((g) => [{ head: 1, k: g.k, t: g.t }].concat(g.lines.map((ln) => {
+      const its = all.filter((it) => it.form === ln.k); const c = count(its);
+      const bad = its.filter((it) => (cur.res[it.c] || {}).s === 'nok').map((it) => it.c);
+      const s = !its.length ? 'na' : c.nok ? 'nok' : c.none ? '' : c.ok ? 'ok' : 'na';
+      const note = !its.length ? 'Dự án không có hạng mục này' : [`${c.ok + c.na}/${c.total} vị trí đạt`, bad.length ? 'Không đạt: ' + bad.join(', ') : '', c.none ? `${c.none} vị trí chưa làm` : ''].filter(Boolean).join(' · ');
+      return { k: ln.k, t: ln.t, m: ln.m, s, res: s ? ST[s] : 'Chưa xong', note };
+    })));
   }
 
   function reportHTML(m) {
@@ -580,7 +767,7 @@
     let info = '';
     for (let i = 0; i < m.info.length; i += 2) info += `<tr><td>${esc(m.info[i][0])}</td><td>${esc(m.info[i][1])}</td><td>${esc(m.info[i + 1][0])}</td><td>${esc(m.info[i + 1][1])}</td></tr>`;
     if (m.team) info += `<tr><td>Thành phần tham gia</td><td colspan="3" style="white-space:pre-line">${esc(m.team)}</td></tr>`;
-    const n = m.counts;
+    const n = m.counts; const SEV = m.sev;
     let k = 1;
     const withPh = m.punch.filter((p) => p.photos.length);
     const logo = window.RAITEK_LOGO ? `<img class="rpt-logo" src="${window.RAITEK_LOGO}" alt="Raitek">` : '';
@@ -593,7 +780,7 @@
     const appx = [];
     appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Chi tiết kết quả kiểm tra</h2>
       <table><tr><th>Mã</th><th>Nội dung kiểm tra</th><th class="c">Kết quả</th><th class="c">Giá trị đo</th><th>Ghi chú</th></tr>
-        ${m.detail.map((sec, i) => (i === 0 || m.detail[i - 1].part !== sec.part ? `<tr class="part"><td colspan="5">PHẦN ${esc(sec.part)} – ${esc(sec.partTitle.toUpperCase())}</td></tr>` : '') + `<tr><th colspan="5">${esc(sec.title)}</th></tr>` + sec.rows.map((r, j) => (r.g && (j === 0 || sec.rows[j - 1].g !== r.g) ? `<tr class="grp"><td colspan="5">${esc(r.g)}</td></tr>` : '') + `<tr><td class="code">${esc(r.c)}</td><td>${esc(r.t)}</td><td class="c">${res(r)}</td><td class="c">${esc(r.val)}</td><td>${esc(r.note)}</td></tr>`).join('')).join('')}</table>`);
+        ${m.detail.map((sec, i) => (i === 0 || m.detail[i - 1].part !== sec.part ? `<tr class="part"><td colspan="5">${esc(m.partWord)} ${esc(sec.part)} – ${esc(sec.partTitle.toUpperCase())}</td></tr>` : '') + `<tr><th colspan="5">${esc(sec.title)}</th></tr>` + sec.rows.map((r, j) => (r.g && (j === 0 || sec.rows[j - 1].g !== r.g) ? `<tr class="grp"><td colspan="5">${esc(r.g)}</td></tr>` : '') + `<tr><td class="code">${esc(r.c)}</td><td>${esc(r.t)}</td><td class="c">${res(r)}</td><td class="c">${esc(r.val)}</td><td>${esc(r.note)}</td></tr>`).join('')).join('')}</table>`);
     if (withPh.length) appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Hình ảnh tồn tại</h2>` + withPh.map((p, i) => photoPage(`Tồn tại ${p.no}/${m.punch.length} · ${p.c}`, p.text, '', metaOf(p), p.photos, p.sev, i === 0)).join(''));
     if (m.appendix.length) appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Hình ảnh hiện trường khác</h2>` + m.appendix.map((a, i) => photoPage(a.c, a.t, a.note, '', a.photos, '', i === 0)).join(''));
     return `<div class="rpt">
@@ -603,15 +790,22 @@
       <h2>${k++}. Thông tin chung</h2><table class="info">${info}</table>
       <h2>${k++}. Tổng hợp kết quả</h2>
       <table class="sum"><tr><th style="text-align:left">Nhóm hạng mục</th><th>Tổng</th><th>Đạt</th><th>Không đạt</th><th>N/A</th><th>Chưa KT</th></tr>
-        ${m.summary.map((r, i) => (i === 0 || m.summary[i - 1].part !== r.part ? `<tr class="part"><td colspan="6" style="text-align:left">PHẦN ${esc(r.part)} – ${esc(r.partTitle.toUpperCase())}</td></tr>` : '') + `<tr><td style="text-align:left;padding-left:16px">${esc(r.cells[0])}</td>${r.cells.slice(1).map((v) => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        ${m.summary.map((r, i) => (i === 0 || m.summary[i - 1].part !== r.part ? `<tr class="part"><td colspan="6" style="text-align:left">${esc(m.partWord)} ${esc(r.part)} – ${esc(r.partTitle.toUpperCase())}</td></tr>` : '') + `<tr><td style="text-align:left;padding-left:16px">${esc(r.cells[0])}</td>${r.cells.slice(1).map((v) => `<td>${v}</td>`).join('')}</tr>`).join('')}
         <tr><th style="text-align:left">Tổng cộng</th>${m.totals.map((v) => `<th>${v}</th>`).join('')}</tr></table>
       <p style="margin:6px 0 0">Tồn tại theo mức độ: <span class="sev A">A</span> ${n.A} · <span class="sev B">B</span> ${n.B} · <span class="sev C">C</span> ${n.C}. (A – ${SEV.A.short}: ${SEV.A.desc} B – ${SEV.B.short}: ${SEV.B.desc} C – ${SEV.C.short}: ${SEV.C.desc})</p>
+      ${m.form ? `<h2>${k++}. Tổng hợp theo mẫu checklist quý</h2>
+      <table><tr><th class="c">TT</th><th>Hạng mục công việc</th><th>Phương pháp</th><th class="c">Kết quả</th><th>Ghi chú</th></tr>
+        ${m.form.map((r) => r.head ? `<tr class="grp"><td class="c">${r.k}</td><td colspan="4">${esc(r.t)}</td></tr>` : `<tr><td class="c code">${r.k}</td><td>${esc(r.t)}</td><td>${esc(r.m)}</td><td class="c">${res(r)}</td><td>${esc(r.note)}</td></tr>`).join('')}</table>
+      ${m.evMissing ? `<p style="margin:6px 0 0">Có ${m.evMissing} hạng mục "Đạt" chưa kèm ảnh hoặc giá trị đo theo yêu cầu.</p>` : ''}` : ''}
+      ${m.prev ? `<h2>${k++}. Theo dõi tồn tại ${esc(m.prev.label)}</h2>
+      <table><tr><th>Mã</th><th>Nội dung tồn tại</th><th class="c">Mức</th><th class="c">Đợt này</th></tr>
+        ${m.prev.rows.map((r) => `<tr><td class="code">${esc(r.c)}</td><td>${esc(r.text)}</td><td class="c"><span class="sev ${esc(r.sev)}">${esc(r.sev)}</span></td><td class="c"><span class="r-${r.s || 'none'}">${esc(r.now)}</span></td></tr>`).join('')}</table>` : ''}
       <h2>${k++}. Danh sách tồn tại</h2>
       ${m.punch.length ? `<table><tr><th class="c">TT</th><th>Mã</th><th>Nội dung tồn tại</th><th class="c">Mức</th><th>Trách nhiệm</th><th class="c">Hạn</th><th class="c">Ảnh</th></tr>
         ${m.punch.map((p) => `<tr><td class="c">${p.no}</td><td class="code">${esc(p.c)}</td><td style="white-space:pre-line">${esc(p.text)}${p.val ? `<br>Giá trị đo: ${esc(p.val)}` : ''}</td><td class="c"><span class="sev ${p.sev}">${p.sev}</span></td><td>${esc(p.resp)}</td><td class="c">${esc(p.due)}</td><td class="c">${p.photos.length || ''}</td></tr>`).join('')}</table>` : '<p>Không ghi nhận tồn tại.</p>'}
       <h2>${k++}. Kết luận</h2>
       <div class="verdict-p"><b>${esc(m.verdict)}</b>${m.verdictNote ? `<div style="white-space:pre-line;margin-top:4px">${esc(m.verdictNote)}</div>` : ''}</div>
-      <div class="signs">${m.signs.map((s) => `<div class="s"><b>${esc(s.label.toUpperCase())}</b>${s.org ? `<div>${esc(s.org)}</div>` : ''}<div style="font-style:italic;color:#666">(Ký, ghi rõ họ tên)</div>${s.img ? `<img src="${s.img}" alt="">` : '<div class="sp"></div>'}<b>${esc(s.name)}</b>${s.title ? `<div>${esc(s.title)}</div>` : ''}</div>`).join('')}</div>
+      <div class="signs" style="grid-template-columns:repeat(${m.signs.length},1fr)">${m.signs.map((s) => `<div class="s"><b>${esc(s.label.toUpperCase())}</b>${s.org ? `<div>${esc(s.org)}</div>` : ''}<div style="font-style:italic;color:#666">(Ký, ghi rõ họ tên)</div>${s.img ? `<img src="${s.img}" alt="">` : '<div class="sp"></div>'}<b>${esc(s.name)}</b>${s.title ? `<div>${esc(s.title)}</div>` : ''}</div>`).join('')}</div>
       ${appx.join('')}
       <p class="foot">${esc(m.stamp)}</p>
     </div>`;
@@ -630,7 +824,8 @@
     } catch (e) { if (e && e.name === 'AbortError') return; }
     download(blob, name); toast('Đã tải file: ' + name);
   }
-  const baseName = () => `${slug(cur.info.project)}_${(cur.info.date || todayISO()).replace(/-/g, '')}`;
+  const baseName = () => `${slug(cur.info.project)}_${isPM() ? 'BT-' + (cur.info.period || '') + '-' + (cur.info.year || '') + '_' : ''}${(cur.info.date || todayISO()).replace(/-/g, '')}`;
+  const formText = () => formRollup().map((r) => (r.head ? [r.k, r.t] : [r.k, r.t, r.m, r.res, r.note]).join('\t')).join('\r\n');
 
   function csvText(sep) {
     const f = cur.info; const q = (v) => { v = String(v == null ? '' : v); return sep === '\t' ? v.replace(/[\t\n\r]+/g, ' ') : /[",\n\r;]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
@@ -657,7 +852,7 @@
       ['Kết quả', `${n.ok} đạt · ${n.nok} không đạt (A ${n.A} / B ${n.B} / C ${n.C}) · ${n.na} N/A · ${n.none} chưa kiểm`],
       ['Kết luận', verdictOf(n).text], ['Ý kiến / kiến nghị', cur.verdict.note || ''], []
     ].map((r) => r.length === 2 ? [{ v: r[0], s: 3 }, r[1] || ''] : r);
-    const head = ['Phần', 'Nhóm', 'Nhóm con', 'Mã', 'Nội dung kiểm tra', 'Kết quả', 'Mức độ', 'Giá trị đo', 'Đơn vị', 'Ghi chú', 'Trách nhiệm', 'Hạn khắc phục', 'Số ảnh'].map(H);
+    const head = [isPM() ? 'Khu vực' : 'Phần', isPM() ? 'Thiết bị' : 'Nhóm', 'Nhóm con', 'Mã', 'Nội dung kiểm tra', 'Kết quả', 'Mức độ', 'Giá trị đo', 'Đơn vị', 'Ghi chú', 'Trách nhiệm', 'Hạn khắc phục', 'Số ảnh'].map(H);
     const rows = allItems().map((it) => {
       const r = cur.res[it.c] || {};
       const sec = secById(it.secId);
@@ -667,10 +862,11 @@
       const r = cur.res[it.c];
       return [W(i + 1), W(it.c), W((r.note || '').trim() || 'Không đạt: ' + it.t), W(r.sev || 'B'), W(r.val ? `${r.val} ${it.u || ''}` : ''), W(r.resp || ''), W(fmtDate(r.due)), W(''), W('')];
     });
-    const blob = window.miniXLSX([
+    const formSheet = isPM() ? [{ name: 'Mẫu A-H', widths: [6, 70, 24, 12, 50], freezeRow: 1, rows: [['TT', 'Hạng mục công việc', 'Phương pháp', 'Kết quả', 'Ghi chú'].map(H)].concat(formRollup().map((r) => r.head ? [{ v: r.k, s: 3 }, { v: r.t, s: 3 }] : [W(r.k), W(r.t), W(r.m), W(r.res), W(r.note)])) }] : [];
+    const blob = window.miniXLSX(formSheet.concat([
       { name: 'Checklist', widths: [22, 24, 22, 9, 60, 11, 8, 13, 8, 45, 15, 14, 8], rows: info.concat([head], rows) },
       { name: 'Tồn tại', widths: [5, 9, 70, 7, 14, 15, 14, 16, 30], freezeRow: 1, rows: [['TT', 'Mã', 'Nội dung tồn tại', 'Mức', 'Giá trị đo', 'Trách nhiệm', 'Hạn khắc phục', 'Ngày hoàn thành', 'Xác nhận / ghi chú'].map(H)].concat(punch) }
-    ]);
+    ]));
     return blob;
   }
   function standaloneHTML() {
@@ -687,6 +883,7 @@
   async function importJSON(file) {
     try {
       const d = JSON.parse(await file.text());
+      if (d.app === 'raitek-pm-site' && Array.isArray(d.assets)) { siteToLibrary(d); return; }
       if (d.app !== 'pv-handover' || !d.insp) throw new Error('bad');
       const insp = d.insp;
       if (await store.get('insp', insp.id)) { insp.id = uid(); insp.info.project = (insp.info.project || '') + ' (bản nhập)'; delete insp.lark; }
@@ -699,6 +896,13 @@
       loadHome();
     } catch (e) { toast('File không đúng định dạng sao lưu của ứng dụng'); }
   }
+  // File hồ sơ thiết bị nhập từ trang chủ: lưu vào thư viện trên máy để chọn khi tạo đợt bảo trì.
+  function siteToLibrary(d) {
+    const list = sitesAll().filter((x) => x.info.project !== (d.info || {}).project);
+    list.unshift({ info: d.info || {}, zones: d.zones || [], assets: d.assets, notes: d.notes || [] });
+    lsSet('pvho-sites', list.slice(0, 200));
+    toast(`Đã lưu hồ sơ "${(d.info || {}).project || 'dự án'}" – chọn khi tạo đợt bảo trì quý`, 3500);
+  }
   async function copyText(text, okMsg) {
     try { await navigator.clipboard.writeText(text); toast(okMsg); }
     catch (e) {
@@ -710,7 +914,7 @@
     const f = cur.info; const n = count(allItems());
     const lines = [];
     if (!punchOnly) {
-      lines.push(`${(PURPOSE[f.purpose] || PURPOSE.handover).label.toUpperCase()} – ${f.project}`);
+      lines.push(`${(PURPOSE[f.purpose] || PURPOSE.handover).label.toUpperCase()}${isPM() ? ' ' + periodLabel(f).toUpperCase() : ''} – ${f.project}`);
       lines.push(`Ngày: ${fmtDate(f.date)}${f.inspector ? ' · Người kiểm tra: ' + f.inspector : ''}`);
       if (f.dc) lines.push(`Công suất: ${f.dc} kWp${f.ac ? ' / ' + f.ac + ' kW' : ''}`);
       lines.push(`Kết quả: ${n.ok} đạt · ${n.nok} không đạt (A ${n.A} / B ${n.B} / C ${n.C}) · ${n.na} N/A · ${n.none} chưa kiểm`);
@@ -1154,9 +1358,12 @@
         'Biên bản PDF': L.pdf ? [L.pdf] : [], 'Chi tiết kết quả (Excel)': L.xlsx ? [L.xlsx] : []
       };
       const types = {};
-      for (const p of CL.parts) {
-        const its = all.filter((it) => secById(it.secId).part === p.id); if (!its.length) continue;
-        const c = count(its), label = `${p.id}. ${p.title}`;
+      // Bảo trì quý: gộp cột theo loại thiết bị (khu vực mỗi dự án một khác nên không dùng làm tên cột).
+      const groups = isPM(insp) ? PM.kinds.map((K) => ({ label: `BT. ${K.title}`, has: (sec) => sec.kind === K.k })) : CL.parts.map((p) => ({ label: `${p.id}. ${p.title}`, has: (sec) => sec.part === p.id }));
+      if (isPM(insp)) { sum['Đợt bảo trì'] = periodLabel(f); types['Đợt bảo trì'] = 'text'; }
+      for (const p of groups) {
+        const its = all.filter((it) => p.has(secById(it.secId))); if (!its.length) continue;
+        const c = count(its), label = p.label;
         const kp = `% hoàn thành – ${label}`, kn = `Không đạt – ${label}`, ka = `Ảnh – ${label}`;
         sum[kp] = c.pct; sum[kn] = c.nok;
         sum[ka] = its.filter((it) => (insp.res[it.c] || {}).s !== 'nok').flatMap(toksOf);
@@ -1175,7 +1382,7 @@
         const sec = secById(it.secId); const toks = toksOf(it);
         const g = (r.ph || []).map((id) => photoGeo.get(id)).find(Boolean);
         const data = {
-          'Dự án': f.project, 'Phần': `${sec.part}. ${sec.partTitle}`, 'Nhóm': sec.title, 'Nhóm con': it.g || '', 'Mã hạng mục': it.c,
+          'Dự án': f.project, 'Phần': `${sec.part}. ${sec.partTitle}`, 'Nhóm': sec.title + (isPM(insp) ? ` (${sec.id})` : ''), 'Nhóm con': it.g || '', 'Mã hạng mục': it.c,
           'Nội dung kiểm tra': it.t, 'Kết quả': ST.nok, 'Mức độ': r.sev || 'B',
           'Ghi chú / mô tả tồn tại': r.note || '', 'Giá trị đo': r.val || '', 'Đơn vị': it.u || '', 'Trách nhiệm': r.resp || '',
           'Hạn khắc phục': r.due || '', 'Ảnh': toks, 'Số ảnh': toks.length, 'Vị trí GPS': g ? `${g.lat.toFixed(6)}, ${g.lng.toFixed(6)}` : ''
@@ -1249,7 +1456,7 @@
     setTimeout(() => { const t = document.getElementById('ni-t'); if (t) t.focus(); }, 50);
   }
   function signModal(k) {
-    const role = SIGN_ROLES.find((r) => r.k === k); const s = cur.sign[k] || {};
+    const role = signRoles().find((r) => r.k === k); const s = cur.sign[k] || {};
     openModal(`<h2>${esc(role.label)}</h2>
       <div class="two"><div class="field"><label for="sg-n">Họ và tên</label><input class="inp" id="sg-n" value="${esc(s.name || (k === 'receiver' ? cur.info.inspector || '' : ''))}"></div>
       <div class="field"><label for="sg-t">Chức vụ</label><input class="inp" id="sg-t" value="${esc(s.title || '')}"></div></div>
@@ -1292,6 +1499,29 @@
     openInsp(d.id);
   }
 
+  async function createDemoPM() {
+    const d = newInspection('pm');
+    Object.assign(d.info, {
+      project: 'VÍ DỤ – Điện mặt trời áp mái Nhà máy Bao bì An Phát', pcode: 'DEMO-PM', type: 'roof', period: 'Q3', scope: 'q',
+      address: 'KCN Tân Đức, Đức Hòa, Long An', dc: '998,4', ac: '800', module: 'Mono 580 Wp × 1.722 tấm',
+      inverter: '8 × 100 kW string inverter', owner: 'Công ty CP Năng lượng ABC', weather: 'Nắng, ít mây', irr: '780', temp: '33'
+    });
+    d.site = PM.quick({ roof: 2, ladder: 2, inv: 8, db: 1, mon: 1, ws: 1, gnd: 1, msb: 1, ff: 1 });
+    d.site.assets.forEach((a) => { if (a.k === 'roof') { a.z = 'Mái xưởng ' + a.id.slice(1); a.n = 'Dàn pin mái xưởng ' + a.id.slice(1); } if (a.k === 'ladder') a.z = 'Mái xưởng ' + a.id.slice(1); if (a.k === 'ws') a.z = 'Mái xưởng 1'; });
+    d.site.zones = ['Trước khi lên mái', 'Mái xưởng 1', 'Mái xưởng 2', 'Trạm inverter', 'Điểm đấu nối', 'Kết thúc'];
+    d.site = PM.normalize(d.site);
+    cur = d;
+    for (const it of allItems()) {
+      if (/^(INV[78]|MSB1|END)-/.test(it.c)) continue;
+      d.res[it.c] = { s: 'ok' }; if (it.u) d.res[it.c].val = it.u === 'tấm' ? '0' : it.u === 'kWh' ? '412.560' : '';
+    }
+    d.res['R2-06'] = { s: 'nok', sev: 'B', val: '2', note: 'Mái xưởng 2, dãy 4: 2 tấm vỡ kính do vật rơi. Đã cô lập string, đánh dấu trên bản vẽ.', resp: 'CĐT', due: '2026-12-20' };
+    d.res['INV3-02'] = { s: 'nok', sev: 'C', note: 'Quạt số 2 kêu to, chưa báo lỗi. Đề xuất thay ở đợt sau.', resp: 'O&M' };
+    cur = null;
+    await store.put('insp', d);
+    openInsp(d.id);
+  }
+
   /* ---------------- events ---------------- */
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-act]'); if (!b) return;
@@ -1300,11 +1530,48 @@
     switch (act) {
       case 'up': goUp(); break;
       case 'new': cur = newInspection(); go('info'); break;
+      case 'new-pm': cur = newInspection('pm'); go('info'); break;
       case 'demo': createDemo(); break;
+      case 'demo-pm': createDemoPM(); break;
       case 'create': {
         if (!cur.info.project.trim()) { toast('Nhập tên dự án'); document.getElementById('f-project').focus(); return; }
+        siteRemember();
         await store.put('insp', cur); openInsp(cur.id); break;
       }
+      case 'site-quick': siteQuickModal(); break;
+      case 'site-quick-ok': {
+        const counts = {}; PM.quickFields.forEach(([k]) => { counts[k] = document.getElementById('qk-' + k).value; });
+        const notes = cur.site.notes; closeModal();
+        if (Object.keys(cur.res).some(hasData) && !(await ask('Tạo lại danh mục thiết bị', 'Danh mục hiện tại sẽ được thay thế. Kết quả đã ghi cho thiết bị không còn trong danh mục mới sẽ bị ẩn.', 'Tạo lại'))) return;
+        cur.site = PM.quick(counts); cur.site.notes = notes; siteChanged(); toast(`Đã tạo ${cur.site.assets.length} thiết bị`); break;
+      }
+      case 'site-add': siteAssetModal(''); break;
+      case 'site-edit': siteAssetModal(b.dataset.id); break;
+      case 'site-save': {
+        const id = b.dataset.id; const name = document.getElementById('as-n').value.trim();
+        let a = id ? cur.site.assets.find((x) => x.id === id) : null;
+        if (!a) {
+          const k = document.getElementById('as-k').value;
+          a = { k, id: PM.nextId(cur.site, k), opt: [] };
+          // Chèn trước mục "Kết thúc" để lộ trình luôn khép lại ở bước trả hiện trường.
+          const at = cur.site.assets.findIndex((x) => x.k === 'end'); cur.site.assets.splice(at < 0 ? cur.site.assets.length : at, 0, a);
+        }
+        const K = PM.kindOf(a.k);
+        a.n = name || K.one; a.z = document.getElementById('as-z').value.trim() || K.zone; a.d = document.getElementById('as-d').value.trim();
+        a.opt = [...$modal.querySelectorAll('[data-opt]')].filter((x) => x.checked).map((x) => x.dataset.opt);
+        // Khu vực mới đứng trước "Kết thúc".
+        if (!cur.site.zones.includes(a.z)) { const ez = cur.site.zones.indexOf(PM.kindOf('end').zone); cur.site.zones.splice(ez < 0 ? cur.site.zones.length : ez, 0, a.z); }
+        closeModal(); siteChanged(); break;
+      }
+      case 'site-del': {
+        const id = b.dataset.id; closeModal();
+        if (assetHasData(id) && !(await ask('Xóa thiết bị', `${id} đã có kết quả trong đợt này. Xóa khỏi danh mục sẽ ẩn các kết quả đó.`, 'Xóa', true))) return;
+        cur.site.assets = cur.site.assets.filter((x) => x.id !== id); siteChanged(); break;
+      }
+      case 'zone-up': { const i = +v; const z = cur.site.zones; if (i > 0) { [z[i - 1], z[i]] = [z[i], z[i - 1]]; siteChanged(); } break; }
+      case 'site-export': siteExport(); break;
+      case 'copy-form': copyText(formText(), 'Đã sao chép – dán vào Excel / mẫu checklist'); break;
+      case 'ev-list': go('insp', { tab: 'check', filter: 'ev', q: '' }); break;
       case 'open': openInsp(b.dataset.id); break;
       case 'settings': settingsModal(); break;
       case 'save-settings':
@@ -1414,6 +1681,10 @@
         touch(); closeModal(); render(false); break;
       }
       case 'dup': {
+        if (isPM()) {
+          const d = nextPeriod(); const carried = Object.keys(d.prev.items).length;
+          await flush(); await store.put('insp', d); toast(`Đã tạo ${periodLabel(d.info)}${carried ? ` – mang theo ${carried} tồn tại` : ''}`); openInsp(d.id); break;
+        }
         const d = newInspection();
         d.info = Object.assign({}, cur.info, { date: todayISO(), project: cur.info.project });
         d.custom = JSON.parse(JSON.stringify(cur.custom || []));
@@ -1442,6 +1713,10 @@
     const t = e.target;
     if (t.dataset.photo) { const fs = [...t.files]; t.value = ''; if (document.getElementById('cam')) closeCamera(); addPhotos(t.dataset.photo, fs, t.dataset.src); }
     else if (t.hasAttribute('data-import')) { if (t.files[0]) importJSON(t.files[0]); t.value = ''; }
+    else if (t.hasAttribute('data-site-import')) { if (t.files[0]) siteImport(t.files[0]); t.value = ''; }
+    else if (t.hasAttribute('data-site-pick')) { const x = sitesAll()[+t.value]; if (t.value !== '' && x) { siteApply(x); render(false); toast('Đã điền hồ sơ: ' + x.info.project); } }
+    else if (t.dataset.info === 'period') { cur.info.period = t.value; cur.info.scope = PM.defaultScope(t.value); if (S.view !== 'info') touch(); render(false); }
+    else if (t.dataset.info === 'scope') { cur.info.scope = t.value; if (S.view !== 'info') touch(); render(false); }
     else if (t.hasAttribute('data-verdict')) { cur.verdict.v = t.value; touch(); render(false); }
     else if (t.dataset.info === 'type' || t.dataset.info === 'purpose') { cur.info[t.dataset.info] = t.value; if (S.view !== 'info') { touch(); } }
   });

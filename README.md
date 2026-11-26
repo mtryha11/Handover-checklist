@@ -1,4 +1,4 @@
-# Raitek PV Handover – Checklist bàn giao O&M điện mặt trời
+# Raitek O&M – Checklist bảo trì quý và bàn giao điện mặt trời
 
 Ứng dụng web cài lên điện thoại (PWA) để đi kiểm tra hiện trạng, audit và **nhận bàn giao O&M** dự án điện mặt trời
 (áp mái, mặt đất, nổi). Chạy **offline** ngoài công trường, không cần server, không cần đăng nhập.
@@ -31,6 +31,35 @@
 
 - **Đồng bộ Lark Base** (tùy chọn): mở app ngay trong Lark Workplace, tự đẩy % hoàn thành, kết quả từng hạng mục,
   ảnh và PDF lên Lark Base qua cầu nối chạy trên máy chủ nội bộ. Xem [docs/LARK-SETUP.md](docs/LARK-SETUP.md).
+
+## Bảo trì bảo dưỡng định kỳ quý
+
+Chế độ thứ hai của ứng dụng (nút **Tạo đợt bảo trì quý** ở trang chủ). Checklist không cố định mà được nhân ra từ hai thứ:
+
+- **Bộ đầu việc theo loại thiết bị** trong [`js/pm.js`](js/pm.js): khu mái, thang, inverter, tủ điện AC, giám sát, cảm biến,
+  tiếp địa, điểm đấu nối, PCCC… Mỗi đầu việc có tần suất (quý / 6 tháng / năm), yêu cầu bằng chứng (ảnh, giá trị đo),
+  cờ "cần cắt điện" và dòng tương ứng trên mẫu checklist quý A–H đang ký với chủ đầu tư.
+- **Hồ sơ thiết bị của dự án**: danh mục thiết bị và khu vực, lập một lần từ bản vẽ hoàn công. Nhập bằng file `.json`,
+  lập nhanh theo số lượng, hoặc thêm / sửa từng thiết bị ở tab **Thông tin**. Hồ sơ lưu trên máy, quý sau chọn lại.
+
+Mỗi thiết bị là một nhóm riêng (INV1, INV2, DB1…) nên thiết bị nào chưa làm xong hiện ngay trên danh sách. Các nhóm xếp
+theo **khu vực**, đúng lộ trình đi tại hiện trường. Biên bản có thêm bảng tổng hợp theo mẫu A–H, danh sách hạng mục
+"Đạt" còn thiếu ảnh / số đo, và phần theo dõi tồn tại của quý trước ("Tạo đợt quý kế tiếp" mang theo tồn tại chưa đóng
+và số đo để đối chiếu).
+
+File hồ sơ thiết bị:
+
+```json
+{ "app": "raitek-pm-site", "v": 1,
+  "info": { "project": "…", "dc": "520,18", "ac": "450" },
+  "zones": ["Trước khi lên mái", "Mái xưởng A", "Trạm inverter", "Kết thúc"],
+  "assets": [{ "k": "inv", "id": "INV1", "n": "Inverter 01 – …", "z": "Trạm inverter", "d": "15 string × 19 tấm", "opt": [] }],
+  "notes": ["Điểm cần xác nhận tại hiện trường"] }
+```
+
+`k` là loại thiết bị (`pre`, `ladder`, `roof`, `ws`, `inv`, `db`, `mon`, `gnd`, `pump`, `ff`, `cable`, `msb`, `tba`, `end`);
+`id` là mã duy nhất, **không đổi sau khi đã có kết quả**; `z` là khu vực; `opt` bật đầu việc tùy chọn (`apfc` tủ có tụ bù,
+`zx` có chống phát ngược). Hồ sơ dự án của khách hàng không nằm trong mã nguồn.
 
 ## Cài lên điện thoại
 
@@ -72,7 +101,8 @@ Sau khi sửa bất kỳ file nào, tăng `VERSION` trong [`sw.js`](sw.js) (vd. 
 ```
 index.html            khung trang
 css/app.css           giao diện (sáng/tối, tối ưu đọc ngoài nắng)
-js/checklist.js       bộ hạng mục kiểm tra
+js/checklist.js       bộ hạng mục kiểm tra (bàn giao / audit)
+js/pm.js              bộ đầu việc bảo trì quý theo loại thiết bị
 js/app.js             logic ứng dụng, lưu trữ, xuất biên bản
 js/brand.js           logo Raitek (nhúng sẵn, dùng cho ứng dụng và PDF)
 js/xlsx.js            tạo file Excel .xlsx (không cần thư viện ngoài)

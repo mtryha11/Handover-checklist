@@ -1,7 +1,7 @@
 {
-  "name": "Raitek PV Handover – Checklist bàn giao O&M điện mặt trời",
+  "name": "Raitek O&M – Checklist bảo trì quý và bàn giao điện mặt trời",
   "short_name": "Raitek O&M",
-  "description": "Checklist kiểm tra hiện trạng, audit và nhận bàn giao O&M dự án điện mặt trời. Chạy offline, chụp ảnh hiện trường, xuất biên bản PDF / Excel.",
+  "description": "Checklist bảo trì bảo dưỡng định kỳ quý, kiểm tra hiện trạng, audit và nhận bàn giao O&M dự án điện mặt trời. Chạy offline, chụp ảnh hiện trường, xuất biên bản PDF / Excel.",
   "lang": "vi",
   "start_url": "./index.html",
   "scope": "./",

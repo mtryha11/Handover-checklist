@@ -1,8 +1,8 @@
 /* Service worker: lưu toàn bộ ứng dụng vào bộ nhớ đệm để chạy offline ngoài công trường.
  * Tăng VERSION mỗi khi sửa file để điện thoại tải bản mới. */
-const VERSION = 'pvho-v10';
+const VERSION = 'pvho-v11';
 const SHELL = [
-  './', 'index.html', 'css/app.css', 'js/checklist.js', 'js/brand.js', 'js/xlsx.js', 'js/pdf.js', 'js/app.js',
+  './', 'index.html', 'css/app.css', 'js/checklist.js', 'js/pm.js', 'js/brand.js', 'js/xlsx.js', 'js/pdf.js', 'js/app.js',
   'js/vendor/jspdf.umd.min.js', 'js/vendor/jspdf.plugin.autotable.min.js', 'js/vendor/pdf-fonts.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'
 ];
