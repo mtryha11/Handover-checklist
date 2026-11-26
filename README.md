@@ -5,9 +5,11 @@
 
 ## Tính năng
 
-- **15 nhóm, 150 hạng mục chuẩn**: hồ sơ pháp lý & tài liệu, tấm pin, khung giá đỡ, cáp DC/string, tủ DC, inverter,
-  tủ AC, trạm biến áp/trung thế, tiếp địa & chống sét, SCADA, đo đếm, PCCC & an toàn, mặt bằng, vật tư dự phòng,
-  hiệu suất & đào tạo. Mỗi hạng mục có tiêu chí đánh giá (nút **i**).
+- **22 nhóm, 297 hạng mục** theo form *FM-HOGY-OM-002 – Checklist of construction quality assessment*
+  (thang lên mái, lan can & dây cứu sinh, sàn thao tác, tấm pin, khung rail, trạm thời tiết, tiếp địa, nước vệ sinh,
+  nhà inverter, inverter, cáp DC/AC, máng cáp, tủ điện, tủ giám sát & Internet, khóa & biển cảnh báo, mặt bằng sau
+  thi công, trạm biến áp, PCCC), cộng thêm hồ sơ bàn giao, tủ DC, đo đếm & chốt chỉ số, vật tư dự phòng.
+  Mỗi hạng mục có tiêu chí đánh giá (nút **i**).
 - Hạng mục tự lọc theo **loại dự án** (áp mái / mặt đất / nổi). Thêm được hạng mục riêng cho từng nhóm.
 - Mỗi hạng mục: **Đạt / Không đạt / N/A**, ô **giá trị đo** (V, A, MΩ, Ω, °C, kWh, %), ghi chú, ảnh.
 - **Chụp ảnh hiện trường**: ảnh được nén (~200–400 KB) và **đóng dấu mã hạng mục + tên dự án + thời gian**.
@@ -51,6 +53,8 @@ Toàn bộ hạng mục nằm trong [`js/checklist.js`](js/checklist.js). Mỗi 
 
 - `c` mã (duy nhất) · `t` nội dung · `h` tiêu chí (tùy chọn) · `u` đơn vị đo (tùy chọn)
 - `s` loại dự án áp dụng: `roof`, `ground`, `float` (bỏ trống = tất cả)
+- `x: 1` hạng mục đã bỏ: ẩn ở biên bản mới, vẫn hiện ở biên bản cũ đã có kết quả
+- **Không đổi hay dùng lại mã cũ**: kết quả đã lưu trên điện thoại gắn với mã hạng mục
 
 Sau khi sửa bất kỳ file nào, tăng `VERSION` trong [`sw.js`](sw.js) (vd. `pvho-v2`) để điện thoại tải bản mới.
 

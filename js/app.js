@@ -175,7 +175,9 @@
   window.addEventListener('pagehide', flush);
 
   /* ---------------- checklist helpers ---------------- */
-  const applies = (it) => !it.s || it.s.split(' ').includes(cur.info.type);
+  // Hạng mục đã bỏ (x) chỉ hiện khi biên bản này đã có kết quả / ghi chú / ảnh cho nó.
+  const hasData = (c) => { const r = cur.res[c]; return !!(r && (r.s || r.note || r.val || (r.ph && r.ph.length))); };
+  const applies = (it) => (!it.s || it.s.split(' ').includes(cur.info.type)) && (!it.x || hasData(it.c));
   const secItems = (sec) => sec.items.filter(applies).concat((cur.custom || []).filter((x) => x.sec === sec.id));
   const allItems = () => CL.sections.flatMap((sec) => secItems(sec).map((it) => Object.assign({ secId: sec.id }, it)));
   const secById = (id) => CL.sections.find((s) => s.id === id);
@@ -290,7 +292,7 @@
     <main class="wrap no-tabs">
       <section class="card hero-card">
         <h2>Bắt đầu một đợt kiểm tra</h2>
-        <p class="muted small" style="margin:0">${CL.sections.length} nhóm, ${CL.sections.reduce((a, s) => a + s.items.length, 0)} hạng mục chuẩn: hồ sơ, tấm pin, kết cấu, cáp DC, inverter, tủ AC, trạm biến áp, tiếp địa, SCADA, đo đếm, PCCC. Ảnh chụp được đóng dấu mã hạng mục và thời gian.</p>
+        <p class="muted small" style="margin:0">${CL.sections.filter((s) => s.items.some((i) => !i.x)).length} nhóm, ${CL.sections.reduce((a, s) => a + s.items.filter((i) => !i.x).length, 0)} hạng mục theo form đánh giá chất lượng công trình: thang, lan can, sàn thao tác, tấm pin, rail, trạm thời tiết, tiếp địa, nước vệ sinh, nhà inverter, inverter, cáp, máng cáp, tủ điện, giám sát, biển báo, PCCC, trạm biến áp, hồ sơ. Ảnh chụp được đóng dấu mã hạng mục và thời gian.</p>
         <button class="btn sun block" data-act="new">${I.plus} Tạo biên bản mới</button>
       </section>
       <div class="row"><span class="eyebrow grow">Biên bản đã lưu (${S.list.length})</span>
@@ -420,7 +422,7 @@
       </div>` : '';
     const moreLabel = [r.note ? 'có ghi chú' : '', nph ? `${nph} ảnh` : ''].filter(Boolean).join(', ');
     return `<article class="card item ${st ? 'st-' + st : ''}" id="it-${c}">
-      <div class="item-head"><div style="min-width:0"><div class="item-code">${c}${it.custom ? ' · bổ sung' : ''}${secName ? ` · <span class="sec-name">${esc(secName)}</span>` : ''}</div><p class="item-t">${esc(it.t)}</p></div>
+      <div class="item-head"><div style="min-width:0"><div class="item-code">${c}${it.custom ? ' · bổ sung' : ''}${it.x ? ' · đã bỏ khỏi checklist' : ''}${secName ? ` · <span class="sec-name">${esc(secName)}</span>` : ''}</div><p class="item-t">${esc(it.t)}</p></div>
         ${it.h ? `<button class="info-btn ${hintOn ? 'on' : ''}" data-act="hint" data-c="${c}" aria-label="Tiêu chí đánh giá" aria-expanded="${hintOn}">i</button>` : ''}</div>
       ${it.h && hintOn ? `<p class="hint">${esc(it.h)}</p>` : ''}
       <div class="seg" role="group" aria-label="Kết quả">
