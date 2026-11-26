@@ -21,6 +21,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 loadDotEnv(path.join(HERE, '.env'));
 const CFG = {
   port: +(process.env.PORT || 8787),
+  host: process.env.HOST || '0.0.0.0',
   open: (process.env.LARK_OPEN_URL || 'https://open.larksuite.com').replace(/\/$/, ''),
   accounts: (process.env.LARK_ACCOUNTS_URL || 'https://accounts.larksuite.com').replace(/\/$/, ''),
   appId: process.env.LARK_APP_ID || '',
@@ -395,8 +396,8 @@ if (process.argv[2] === 'setup') {
     .catch((e) => { console.error(e.message); process.exit(1); });
 } else {
   checkConfig();
-  server.listen(CFG.port, () => {
-    log(`Cầu nối Lark chạy tại cổng ${CFG.port}; công khai: ${CFG.publicUrl}; cho phép: ${CFG.origins.join(', ')}`);
+  server.listen(CFG.port, CFG.host, () => {
+    log(`Cầu nối Lark chạy tại ${CFG.host}:${CFG.port}; công khai: ${CFG.publicUrl}; cho phép: ${CFG.origins.join(', ')}`);
     ensureTables().then((ids) => log('Bảng Lark:', JSON.stringify(ids))).catch((e) => log('Chưa kết nối được Lark Base:', e.message));
   });
 }
