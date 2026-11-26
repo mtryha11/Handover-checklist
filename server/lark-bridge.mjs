@@ -260,6 +260,7 @@ function readBody(req, limit = 40 * 1024 * 1024) {
 }
 
 const routes = {
+  'GET /': async () => ({ service: 'Raitek PV Handover – cầu nối Lark Base', ok: true, health: '/health', hint: 'Mở ứng dụng từ Lark Workplace để đăng nhập và đồng bộ' }),
   'GET /health': async () => ({ ok: true, configured: !!(CFG.appId && CFG.appSecret && CFG.base && CFG.sessionSecret && CFG.publicUrl), tables: tables || null }),
 
   'GET /auth/login': async ({ url, res }) => {
