@@ -646,7 +646,8 @@
     }
     return rows.map((r) => r.map(q).join(sep)).join('\r\n');
   }
-  function exportXLSX() {
+  function exportXLSX() { shareOrDownload(buildXLSX(), baseName() + '.xlsx', 'Checklist ' + cur.info.project); }
+  function buildXLSX() {
     const f = cur.info; const n = count(allItems()); const H = (v) => ({ v, s: 1 }); const W = (v) => ({ v, s: 2 });
     const info = [
       [{ v: PURPOSE[f.purpose || 'handover'].title.toUpperCase(), s: 3 }], [],
@@ -670,7 +671,7 @@
       { name: 'Checklist', widths: [22, 24, 22, 9, 60, 11, 8, 13, 8, 45, 15, 14, 8], rows: info.concat([head], rows) },
       { name: 'Tồn tại', widths: [5, 9, 70, 7, 14, 15, 14, 16, 30], freezeRow: 1, rows: [['TT', 'Mã', 'Nội dung tồn tại', 'Mức', 'Giá trị đo', 'Trách nhiệm', 'Hạn khắc phục', 'Ngày hoàn thành', 'Xác nhận / ghi chú'].map(H)].concat(punch) }
     ]);
-    shareOrDownload(blob, baseName() + '.xlsx', 'Checklist ' + cur.info.project);
+    return blob;
   }
   function standaloneHTML() {
     return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(PURPOSE[cur.info.purpose || 'handover'].title)} – ${esc(cur.info.project)}</title>
@@ -1123,23 +1124,11 @@
     const insp = cur; sync.running = true; setSync('running');
     const save = () => store.put('insp', insp).catch(() => {});
     try {
-      const L = insp.lark = insp.lark || { rec: '', items: {} };
-      L.items = L.items || {};
+      // v2: chỉ các hạng mục "Không đạt" thành dòng riêng (bảng Tồn tại); còn lại gộp vào cột theo Phần của dòng Biên bản.
+      let L = insp.lark;
+      if (!L || L.v !== 2) L = insp.lark = { v: 2, rec: (L && L.rec) || '', pdf: (L && L.pdf) || '', xlsx: (L && L.xlsx) || '', items: {} };
       const f = insp.info, all = allItems(), n = count(all);
-      // 1) Dòng tổng quan biên bản
-      const sum = {
-        'Dự án': f.project, 'Mã dự án': f.pcode, 'Mục đích': (PURPOSE[f.purpose] || PURPOSE.handover).label, 'Loại dự án': CL.types[f.type],
-        'Trạng thái': n.none ? 'Đang kiểm tra' : 'Đã kiểm xong', 'Hoàn thành (%)': n.pct, 'Tổng hạng mục': n.total,
-        'Đạt': n.ok, 'Không đạt': n.nok, 'N/A': n.na, 'Chưa kiểm': n.none, 'Tồn tại A': n.A, 'Tồn tại B': n.B, 'Tồn tại C': n.C,
-        'Kết luận': verdictOf(n).text, 'Ngày kiểm tra': f.date, 'Người kiểm tra': f.inspector, 'Địa điểm': f.address, 'Tọa độ GPS': f.gps,
-        'Công suất DC (kWp)': f.dc, 'Chủ đầu tư': f.owner, 'Bên bàn giao (EPC)': f.epc, 'Đơn vị O&M': f.om, 'Biên bản PDF': L.pdf ? [L.pdf] : []
-      };
-      const sh = hashOf(JSON.stringify(sum));
-      if (!L.rec || L.sumH !== sh) {
-        const d = await larkApi('/api/sync/inspection', { inspId: insp.id, recordId: L.rec || '', data: sum });
-        L.rec = d.recordId; L.sumH = sh; await save();
-      }
-      // 2) Ảnh: tải lên từng ảnh mới
+      // 1) Ảnh: tải lên từng ảnh mới (của mọi hạng mục)
       const queue = [];
       for (const it of all) {
         const r = insp.res[it.c] || {}; const li = L.items[it.c] = L.items[it.c] || { rec: '', h: '', ph: {} };
@@ -1154,17 +1143,42 @@
         const d = await larkApi('/api/upload', { kind: 'image', name: `${q.c}_${q.k + 1}.jpg`, data: data.split(',')[1] });
         L.items[q.c].ph[q.id] = d.file_token; sync.pendingPh--; setSync('running'); await save();
       }
-      // 3) Từng hạng mục: chỉ gửi những dòng đã thay đổi
-      const changed = [];
+      const toksOf = (it) => ((insp.res[it.c] || {}).ph || []).map((id) => L.items[it.c].ph[id]).filter(Boolean);
+      // 2) Dòng Biên bản: tổng quan + cột theo từng Phần (% hoàn thành, số không đạt, ảnh hiện trường)
+      const sum = {
+        'Dự án': f.project, 'Mã dự án': f.pcode, 'Mục đích': (PURPOSE[f.purpose] || PURPOSE.handover).label, 'Loại dự án': CL.types[f.type],
+        'Trạng thái': n.none ? 'Đang kiểm tra' : 'Đã kiểm xong', 'Hoàn thành (%)': n.pct, 'Tổng hạng mục': n.total,
+        'Đạt': n.ok, 'Không đạt': n.nok, 'N/A': n.na, 'Chưa kiểm': n.none, 'Tồn tại A': n.A, 'Tồn tại B': n.B, 'Tồn tại C': n.C,
+        'Kết luận': verdictOf(n).text, 'Ngày kiểm tra': f.date, 'Người kiểm tra': f.inspector, 'Địa điểm': f.address, 'Tọa độ GPS': f.gps,
+        'Công suất DC (kWp)': f.dc, 'Chủ đầu tư': f.owner, 'Bên bàn giao (EPC)': f.epc, 'Đơn vị O&M': f.om,
+        'Biên bản PDF': L.pdf ? [L.pdf] : [], 'Chi tiết kết quả (Excel)': L.xlsx ? [L.xlsx] : []
+      };
+      const types = {};
+      for (const p of CL.parts) {
+        const its = all.filter((it) => secById(it.secId).part === p.id); if (!its.length) continue;
+        const c = count(its), label = `${p.id}. ${p.title}`;
+        const kp = `% hoàn thành – ${label}`, kn = `Không đạt – ${label}`, ka = `Ảnh – ${label}`;
+        sum[kp] = c.pct; sum[kn] = c.nok;
+        sum[ka] = its.filter((it) => (insp.res[it.c] || {}).s !== 'nok').flatMap(toksOf);
+        types[kp] = 'number'; types[kn] = 'number'; types[ka] = 'attachment';
+      }
+      const sh = hashOf(JSON.stringify(sum));
+      if (!L.rec || L.sumH !== sh) {
+        const d = await larkApi('/api/sync/inspection', { inspId: insp.id, recordId: L.rec || '', data: sum, types });
+        L.rec = d.recordId; L.sumH = sh; await save();
+      }
+      // 3) Bảng Tồn tại: chỉ hạng mục Không đạt; hạng mục hết "Không đạt" thì xóa dòng
+      const changed = [], gone = [];
       for (const it of all) {
-        const r = insp.res[it.c] || {}; const li = L.items[it.c]; const sec = secById(it.secId);
-        const toks = (r.ph || []).map((id) => li.ph[id]).filter(Boolean);
+        const r = insp.res[it.c] || {}; const li = L.items[it.c];
+        if (r.s !== 'nok') { if (li.rec) { gone.push(li.rec); li.rec = ''; li.h = ''; } continue; }
+        const sec = secById(it.secId); const toks = toksOf(it);
         const g = (r.ph || []).map((id) => photoGeo.get(id)).find(Boolean);
         const data = {
           'Dự án': f.project, 'Phần': `${sec.part}. ${sec.partTitle}`, 'Nhóm': sec.title, 'Nhóm con': it.g || '', 'Mã hạng mục': it.c,
-          'Nội dung kiểm tra': it.t, 'Kết quả': r.s ? ST[r.s] : 'Chưa kiểm', 'Mức độ': r.s === 'nok' ? (r.sev || 'B') : '',
-          'Ghi chú / mô tả tồn tại': r.note || '', 'Giá trị đo': r.val || '', 'Đơn vị': it.u || '', 'Trách nhiệm': r.s === 'nok' ? (r.resp || '') : '',
-          'Hạn khắc phục': r.s === 'nok' ? (r.due || '') : '', 'Ảnh': toks, 'Số ảnh': toks.length, 'Vị trí GPS': g ? `${g.lat.toFixed(6)}, ${g.lng.toFixed(6)}` : ''
+          'Nội dung kiểm tra': it.t, 'Kết quả': ST.nok, 'Mức độ': r.sev || 'B',
+          'Ghi chú / mô tả tồn tại': r.note || '', 'Giá trị đo': r.val || '', 'Đơn vị': it.u || '', 'Trách nhiệm': r.resp || '',
+          'Hạn khắc phục': r.due || '', 'Ảnh': toks, 'Số ảnh': toks.length, 'Vị trí GPS': g ? `${g.lat.toFixed(6)}, ${g.lng.toFixed(6)}` : ''
         };
         const h = hashOf(JSON.stringify(data) + L.rec);
         if (!li.rec || li.h !== h) changed.push({ c: it.c, h, key: `${insp.id}|${it.c}`, recordId: li.rec || '', data });
@@ -1175,6 +1189,7 @@
         chunk.forEach((x) => { const rec = d.ids && d.ids[x.key]; if (rec) { L.items[x.c].rec = rec; L.items[x.c].h = x.h; } });
         await save();
       }
+      if (gone.length) { await larkApi('/api/sync/items-delete', { recordIds: gone }); await save(); }
       L.at = Date.now(); await save();
       setSync('ok');
     } catch (e) {
@@ -1188,12 +1203,16 @@
   window.addEventListener('offline', () => setSync(sync.state));
   async function larkSavePdf() {
     if (!pdfOut || !cur) return;
-    const btn = document.querySelector('[data-act=pdf-lark]'); if (btn) { btn.disabled = true; btn.textContent = 'Đang gửi PDF lên Lark…'; }
+    const btn = document.querySelector('[data-act=pdf-lark]'); if (btn) { btn.disabled = true; btn.textContent = 'Đang gửi PDF và Excel lên Lark…'; }
     try {
       const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(pdfOut.blob); });
       const d = await larkApi('/api/upload', { kind: 'file', name: pdfOut.name, data: b64 });
-      cur.lark = cur.lark || { rec: '', items: {} }; cur.lark.pdf = d.file_token; cur.lark.sumH = '';
-      await store.put('insp', cur); toast('Đã lưu PDF vào Lark Base'); runSync();
+      const xb = buildXLSX();
+      const xb64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(xb); });
+      const dx = await larkApi('/api/upload', { kind: 'file', name: baseName() + '.xlsx', data: xb64 });
+      if (!cur.lark || cur.lark.v !== 2) cur.lark = { v: 2, rec: (cur.lark && cur.lark.rec) || '', items: {} };
+      cur.lark.pdf = d.file_token; cur.lark.xlsx = dx.file_token; cur.lark.sumH = '';
+      await store.put('insp', cur); toast('Đã lưu PDF và Excel chi tiết vào Lark Base'); runSync();
       if (btn) btn.textContent = 'Đã lưu PDF vào Lark';
     } catch (e) { toast(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Lưu PDF vào Lark Base'; } }
   }

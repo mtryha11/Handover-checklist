@@ -56,11 +56,12 @@ const SCHEMA = {
       ['N/A', 'number'], ['Chưa kiểm', 'number'], ['Tồn tại A', 'number'], ['Tồn tại B', 'number'], ['Tồn tại C', 'number'],
       ['Kết luận', 'text'], ['Ngày kiểm tra', 'date'], ['Người kiểm tra', 'text'], ['Địa điểm', 'text'], ['Tọa độ GPS', 'text'],
       ['Công suất DC (kWp)', 'number'], ['Chủ đầu tư', 'text'], ['Bên bàn giao (EPC)', 'text'], ['Đơn vị O&M', 'text'],
-      ['Biên bản PDF', 'attachment'], ['Người đồng bộ', 'text'], ['Cập nhật lúc', 'date']
+      ['Biên bản PDF', 'attachment'], ['Chi tiết kết quả (Excel)', 'attachment'], ['Người đồng bộ', 'text'], ['Cập nhật lúc', 'date']
+      // Các cột theo từng Phần (% hoàn thành, số không đạt, ảnh) do app gửi kèm kiểu và được tạo tự động.
     ]
   },
   items: {
-    name: 'Kết quả hạng mục',
+    name: 'Tồn tại', // chỉ các hạng mục Không đạt (tiết kiệm số bản ghi)
     fields: [
       ['Khóa', 'text'], ['Biên bản', 'link', 'insp'], ['Mã biên bản', 'text'], ['Dự án', 'text'],
       ['Phần', 'text'], ['Nhóm', 'text'], ['Nhóm con', 'text'], ['Mã hạng mục', 'text'], ['Nội dung kiểm tra', 'text'],
@@ -73,7 +74,10 @@ const SCHEMA = {
     ]
   }
 };
-const fieldDef = (tbl, name) => SCHEMA[tbl].fields.find((f) => f[0] === name);
+// Kiểu của từng cột đang có trên Base (đọc khi khởi động; cập nhật khi tạo cột mới).
+const ftypes = { insp: new Map(), items: new Map() };
+const TYPE_NAME = { 1: 'text', 2: 'number', 3: 'select', 5: 'date', 17: 'attachment', 18: 'link' };
+const DYNAMIC_OK = new Set(['text', 'number', 'date', 'attachment']);
 
 /* ---------------- gọi Lark Open API ---------------- */
 let tenantTok = { v: '', exp: 0 }, appTok = { v: '', exp: 0 };
@@ -142,27 +146,36 @@ async function ensureTables() {
       let page = '';
       do {
         const d = await lark('GET', `/open-apis/bitable/v1/apps/${CFG.base}/tables/${ids[key]}/fields?page_size=100${page ? `&page_token=${page}` : ''}`);
-        (d.items || []).forEach((f) => have.add(f.field_name)); page = d.has_more ? d.page_token : '';
+        (d.items || []).forEach((f) => { have.add(f.field_name); ftypes[key].set(f.field_name, TYPE_NAME[f.type] || 'other'); }); page = d.has_more ? d.page_token : '';
       } while (page);
       for (const f of def.fields) {
-        if (!have.has(f[0])) { await lark('POST', `/open-apis/bitable/v1/apps/${CFG.base}/tables/${ids[key]}/fields`, fieldBody(f)); log(`+ trường "${f[0]}" trong bảng "${def.name}"`); }
+        if (!have.has(f[0])) { await lark('POST', `/open-apis/bitable/v1/apps/${CFG.base}/tables/${ids[key]}/fields`, fieldBody(f)); ftypes[key].set(f[0], f[1]); log(`+ trường "${f[0]}" trong bảng "${def.name}"`); }
       }
     } else {
       const d = await lark('POST', `/open-apis/bitable/v1/apps/${CFG.base}/tables`, { table: { name: def.name, default_view_name: 'Tất cả', fields: def.fields.map(fieldBody) } });
-      ids[key] = d.table_id; log(`+ bảng "${def.name}" (${d.table_id})`);
+      ids[key] = d.table_id; def.fields.forEach((f) => ftypes[key].set(f[0], f[1])); log(`+ bảng "${def.name}" (${d.table_id})`);
     }
   }
   tables = ids;
+  ensureTables.fieldBody = fieldBody;
   return ids;
+}
+// Tạo các cột còn thiếu mà app gửi kèm kiểu (vd. "% hoàn thành – A. Hồ sơ & tài liệu": number).
+async function ensureFields(key, types) {
+  const ids = await ensureTables();
+  for (const [name, type] of Object.entries(types || {})) {
+    if (ftypes[key].has(name) || !DYNAMIC_OK.has(type) || name.length > 90) continue;
+    await lark('POST', `/open-apis/bitable/v1/apps/${CFG.base}/tables/${ids[key]}/fields`, ensureTables.fieldBody([name, type]));
+    ftypes[key].set(name, type); log(`+ trường "${name}" trong bảng "${SCHEMA[key].name}"`);
+  }
 }
 
 /* ---------------- chuyển dữ liệu app → giá trị trường Lark ---------------- */
 function toLark(tbl, data, { forUpdate }) {
   const out = {};
   for (const [name, val] of Object.entries(data || {})) {
-    const def = fieldDef(tbl, name);
-    if (!def || name === 'Tình trạng khắc phục') continue;
-    const type = def[1];
+    const type = ftypes[tbl].get(name);
+    if (!type || type === 'other' || name === 'Tình trạng khắc phục') continue;
     const empty = val === null || val === undefined || val === '' || (Array.isArray(val) && !val.length);
     if (empty) { if (forUpdate && type !== 'link') out[name] = null; continue; }
     if (type === 'number') { const n = Number(String(val).replace(',', '.')); if (isFinite(n)) out[name] = n; }
@@ -273,6 +286,7 @@ const routes = {
     const ids = await ensureTables();
     const data = Object.assign({}, body.data, { 'Mã biên bản': body.inspId, 'Người đồng bộ': user.name, 'Cập nhật lúc': Date.now() });
     return serial(ids.insp, async () => {
+      await ensureFields('insp', body.types);
       let rec = body.recordId;
       if (!rec) rec = (await searchKeys(ids.insp, 'Mã biên bản', body.inspId, 'Mã biên bản'))[body.inspId];
       if (rec) {
@@ -284,7 +298,20 @@ const routes = {
     });
   },
 
-  // Tạo / cập nhật nhiều dòng trong bảng "Kết quả hạng mục".
+  // Xóa các dòng tồn tại không còn "Không đạt".
+  'POST /api/sync/items-delete': async ({ body }) => {
+    const ids = await ensureTables();
+    const recs = (body.recordIds || []).filter(Boolean).slice(0, 500);
+    return serial(ids.items, async () => {
+      for (let i = 0; i < recs.length; i += 100) {
+        try { await lark('POST', `/open-apis/bitable/v1/apps/${CFG.base}/tables/${ids.items}/records/batch_delete`, { records: recs.slice(i, i + 100) }); }
+        catch (e) { if (e.code !== 1254043) throw e; } // đã bị xóa trên Lark
+      }
+      return { deleted: recs.length };
+    });
+  },
+
+  // Tạo / cập nhật nhiều dòng trong bảng "Tồn tại".
   'POST /api/sync/items': async ({ body, user }) => {
     const ids = await ensureTables();
     const items = (body.items || []).slice(0, 500);

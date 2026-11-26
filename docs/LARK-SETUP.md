@@ -21,7 +21,7 @@ Node.js 18+ (hoặc Docker), và một tên miền HTTPS trỏ về máy chủ �
 1. Trong Lark, tạo một **Base** mới, đặt tên ví dụ `PV Handover – Raitek`.
 2. Mở Base, nhìn thanh địa chỉ: `https://xxx.larksuite.com/base/`**`AbCdEf123456`**`?table=...`
    Phần in đậm (sau `/base/`, trước `?`) là **Base token** – ghi lại.
-3. Không cần tạo bảng: cầu nối tự tạo 2 bảng **Biên bản** và **Kết quả hạng mục** với đủ cột.
+3. Không cần tạo bảng: cầu nối tự tạo 2 bảng **Biên bản** và **Tồn tại** với đủ cột.
 
 ## Bước 2 – Tạo ứng dụng trên Lark Developer Console
 
@@ -130,9 +130,9 @@ Kiểm tra: mở `https://lark-bridge.raitek.vn/health` → thấy `{"ok":true,"
 
 ## Bước 6 – Dựng view và dashboard trên Lark Base
 
-Bảng **Kết quả hạng mục**:
+Bảng **Tồn tại** (chỉ chứa hạng mục Không đạt):
 
-- View **Tồn tại**: lọc `Kết quả = Không đạt`, nhóm theo `Biên bản`, sắp theo `Mức độ`.
+- View **Theo biên bản**: nhóm theo `Biên bản`, sắp theo `Mức độ`.
 - View **Kanban khắc phục**: kiểu Kanban theo `Tình trạng khắc phục` (Chưa xử lý / Đang xử lý / Đã khắc phục).
   Cột này do người dùng Lark cập nhật; app không ghi đè.
 - View **Gallery ảnh**: kiểu Gallery, ảnh bìa = `Ảnh`.
@@ -141,19 +141,25 @@ Dashboard:
 
 - Thẻ số: tổng biên bản, trung bình `Hoàn thành (%)`, tổng `Tồn tại A`.
 - Biểu đồ cột: `Hoàn thành (%)` theo `Dự án`.
-- Biểu đồ: số dòng `Kết quả = Không đạt` theo `Phần` / `Nhóm` / `Mức độ`.
+- Biểu đồ: số dòng bảng `Tồn tại` theo `Phần` / `Nhóm` / `Mức độ` / `Tình trạng khắc phục`.
+- Bảng Biên bản có sẵn cột `% hoàn thành – A…K` và `Không đạt – A…K` để vẽ tiến độ từng Phần.
 
-## Dữ liệu được đồng bộ
+## Dữ liệu được đồng bộ (tiết kiệm bản ghi)
 
-| Bảng | Mỗi dòng | Cập nhật khi |
+Gói Lark giới hạn số bản ghi (ví dụ 20.000), nên dữ liệu được tổ chức **nhiều cột, ít dòng**:
+
+| Bảng | Mỗi dòng | Nội dung |
 |---|---|---|
-| Biên bản | 1 đợt kiểm tra | % hoàn thành, số lượng, kết luận, thông tin dự án thay đổi; PDF được lưu |
-| Kết quả hạng mục | 1 hạng mục × 1 biên bản | kết quả, mức độ, ghi chú, giá trị đo, trách nhiệm, hạn, ảnh thay đổi |
+| **Biên bản** | 1 đợt kiểm tra | Thông tin dự án, % hoàn thành, Đạt / Không đạt / N/A / Chưa kiểm, tồn tại A/B/C, kết luận; **theo từng Phần A–K**: `% hoàn thành – …`, `Không đạt – …`, `Ảnh – …` (ảnh hiện trường của các hạng mục không có tồn tại); **Biên bản PDF**; **Chi tiết kết quả (Excel)** – đủ mọi hạng mục |
+| **Tồn tại** | 1 hạng mục **Không đạt** | Phần, nhóm, mã, nội dung, mức A/B/C, mô tả, giá trị đo, trách nhiệm, hạn, ảnh, GPS, `Tình trạng khắc phục` (người dùng Lark cập nhật) |
 
-- Đồng bộ chạy nền ~8 giây sau mỗi thay đổi, khi mở biên bản và khi điện thoại có mạng trở lại; chỉ gửi phần thay đổi.
-- Ảnh gửi từng ảnh một (~300 KB/ảnh). Một biên bản ~300 dòng ở bảng Kết quả hạng mục – kiểm tra giới hạn số dòng/bảng
-  theo gói Lark của công ty.
+- Mỗi biên bản dùng **1 + số tồn tại** bản ghi (thường 10–30) → 20.000 bản ghi đủ cho khoảng 700–1.000 biên bản.
+- Hạng mục chuyển từ Không đạt sang Đạt / N/A thì dòng Tồn tại của nó tự xóa.
+- Các cột theo Phần do cầu nối tự tạo ở lần đồng bộ đầu tiên.
+- Excel chi tiết và PDF được gửi khi bấm **Lưu PDF vào Lark Base** (tab Biên bản → Xuất PDF).
+- Đồng bộ chạy nền ~8 giây sau mỗi thay đổi, khi mở biên bản và khi có mạng trở lại; chỉ gửi phần thay đổi.
 - Xóa biên bản trên điện thoại **không** xóa dữ liệu trên Lark.
+- Nếu đã chạy thử bản trước và Base có bảng **Kết quả hạng mục**, có thể xóa bảng đó.
 
 ## Xử lý sự cố
 
