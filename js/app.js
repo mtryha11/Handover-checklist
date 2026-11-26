@@ -873,18 +873,19 @@
     const textW = Math.max(...shown.map((l, i) => { ctx.font = font(i === 0); return ctx.measureText(l).width; }));
     const boxH = Math.max(ms, shown.length * lh) + pad, boxW = (ms ? ms + pad : 0) + textW + pad * 1.5;
     const bx = pad, by = h - pad - boxH;
-    ctx.fillStyle = 'rgba(12, 8, 50, .48)'; rr(ctx, bx, by, boxW, boxH, pad * 0.6); ctx.fill();
+    const OP = 0.3; // độ đậm của bản đồ & nền: 30%
+    ctx.fillStyle = `rgba(12, 8, 50, ${OP})`; rr(ctx, bx, by, boxW, boxH, pad * 0.6); ctx.fill();
     if (ms) {
       const mx = bx + pad / 2, my = by + pad / 2, cx = mx + ms / 2, cy = my + ms / 2;
       ctx.save(); rr(ctx, mx, my, ms, ms, pad * 0.45); ctx.clip();
-      if (inset) { ctx.globalAlpha = 0.78; ctx.drawImage(inset, mx, my, ms, ms); ctx.globalAlpha = 1; }
+      if (inset) { ctx.globalAlpha = OP; ctx.drawImage(inset, mx, my, ms, ms); ctx.globalAlpha = 1; }
       else {
-        ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fillRect(mx, my, ms, ms);
-        ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1;
+        ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(mx, my, ms, ms);
+        ctx.strokeStyle = `rgba(255,255,255,${OP * 0.7})`; ctx.lineWidth = 1;
         for (let k = 1; k < 4; k++) { const d = ms * k / 4; ctx.beginPath(); ctx.moveTo(mx + d, my); ctx.lineTo(mx + d, my + ms); ctx.moveTo(mx, my + d); ctx.lineTo(mx + ms, my + d); ctx.stroke(); }
       }
       ctx.restore();
-      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = Math.max(1, m * 0.0025); rr(ctx, mx, my, ms, ms, pad * 0.45); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${OP + 0.15})`; ctx.lineWidth = Math.max(1, m * 0.0025); rr(ctx, mx, my, ms, ms, pad * 0.45); ctx.stroke();
       const r = ms * 0.075; // ghim
       ctx.fillStyle = '#e53935'; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, r * 0.22);
       ctx.beginPath(); ctx.arc(cx, cy - r * 1.35, r, Math.PI * 0.85, Math.PI * 2.15); ctx.lineTo(cx, cy); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -894,6 +895,7 @@
     const tx = bx + pad * 0.75 + (ms ? ms + pad / 2 : 0);
     const ty0 = by + pad / 2 + (Math.max(ms, shown.length * lh) - shown.length * lh) / 2;
     ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = Math.max(2, fs * 0.3); ctx.shadowOffsetY = 1; // chữ vẫn rõ trên nền sáng
     shown.forEach((l, i) => { ctx.font = font(i === 0); ctx.fillStyle = i === 0 ? '#ffffff' : 'rgba(255,255,255,.88)'; ctx.fillText(l, tx, ty0 + lh * i + lh / 2); });
     ctx.restore();
   }
