@@ -261,7 +261,12 @@ function readBody(req, limit = 40 * 1024 * 1024) {
 
 const routes = {
   'GET /': async () => ({ service: 'Raitek PV Handover – cầu nối Lark Base', ok: true, health: '/health', hint: 'Mở ứng dụng từ Lark Workplace để đăng nhập và đồng bộ' }),
-  'GET /health': async () => ({ ok: true, configured: !!(CFG.appId && CFG.appSecret && CFG.base && CFG.sessionSecret && CFG.publicUrl), tables: tables || null }),
+  'GET /health': async () => {
+    const configured = !!(CFG.appId && CFG.appSecret && CFG.base && CFG.sessionSecret && CFG.publicUrl);
+    let error = null;
+    if (configured && !tables) { try { await ensureTables(); } catch (e) { error = e.message; } } // thử kết nối lại, báo lỗi cụ thể
+    return { ok: true, configured, tables: tables || null, error, base: CFG.base ? CFG.base.slice(0, 4) + '…' + CFG.base.slice(-3) : '' };
+  },
 
   'GET /auth/login': async ({ url, res }) => {
     const ret = url.searchParams.get('return') || '';
