@@ -26,12 +26,18 @@ const CFG = {
   accounts: (process.env.LARK_ACCOUNTS_URL || 'https://accounts.larksuite.com').replace(/\/$/, ''),
   appId: process.env.LARK_APP_ID || '',
   appSecret: process.env.LARK_APP_SECRET || '',
-  base: process.env.LARK_BASE_TOKEN || '',
+  base: baseToken(process.env.LARK_BASE_TOKEN || ''),
   publicUrl: (process.env.PUBLIC_URL || '').replace(/\/$/, ''),
   origins: (process.env.ALLOWED_ORIGINS || 'https://mtryha11.github.io').split(',').map((s) => s.trim()).filter(Boolean),
   sessionSecret: process.env.SESSION_SECRET || '',
   sessionDays: +(process.env.SESSION_DAYS || 30)
 };
+// Chấp nhận cả token lẫn nguyên đường dẫn Base (…/base/<token>?table=…&view=…): chỉ lấy phần token.
+function baseToken(raw) {
+  const v = String(raw).trim();
+  const m = v.match(/\/base\/([A-Za-z0-9]+)/);
+  return m ? m[1] : v.split(/[?&#/\s]/)[0];
+}
 function loadDotEnv(file) {
   if (!fs.existsSync(file)) return;
   for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
