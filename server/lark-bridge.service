@@ -1,0 +1,16 @@
+# Chạy cầu nối như một dịch vụ Linux (systemd).
+# Cài: sudo cp lark-bridge.service /etc/systemd/system/ && sudo systemctl enable --now lark-bridge
+[Unit]
+Description=Raitek PV Handover - Lark bridge
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/lark-bridge
+ExecStart=/usr/bin/node /opt/lark-bridge/lark-bridge.mjs
+Restart=always
+RestartSec=5
+User=www-data
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

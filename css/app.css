@@ -258,6 +258,13 @@ h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
 .sec-head h2 { font-size: 19px; }
 .sec-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
+/* ---------- Lark sync bar ---------- */
+.sync-bar { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--muted); }
+.sync-bar span { flex: 1; min-width: 0; }
+.sync-bar .btn { min-height: 36px; font-size: 13px; padding: 0 12px; }
+.sync-bar.warn { border-color: var(--sev-b); color: var(--sev-b); }
+.sync-bar.err { border-color: var(--nok); color: var(--nok); background: var(--nok-bg); }
+
 /* ---------- parts & sub-groups ---------- */
 .part-head {
   display: flex; align-items: center; gap: 10px; margin-top: 10px;

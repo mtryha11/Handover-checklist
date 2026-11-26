@@ -152,6 +152,7 @@
   const S = { view: 'home', tab: 'check', sec: null, filter: 'all', q: '', list: [], isNew: false, focus: null };
   let cur = null;            // inspection đang mở
   const photoCache = new Map(); // ảnh gốc (chỉ dùng khi xem từng ảnh và khi xuất file)
+  const photoGeo = new Map();   // tọa độ chụp của từng ảnh
   const thumbCache = new Map(); // ảnh thu nhỏ để hiển thị trong ứng dụng (tránh tràn bộ nhớ trên iPhone)
   const PH_BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
   const openSet = new Set(); // item mở rộng
@@ -169,6 +170,7 @@
     if (!cur) return;
     cur.updated = Date.now();
     clearTimeout(saveT); saveT = setTimeout(flush, 350);
+    scheduleSync();
   }
   function flush() { clearTimeout(saveT); saveT = null; if (cur) return store.put('insp', cur).catch(() => toast('Không lưu được dữ liệu – bộ nhớ có thể đã đầy')); }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
@@ -233,9 +235,10 @@
     cur = it; cur.res = cur.res || {}; cur.custom = cur.custom || []; cur.sign = cur.sign || {}; cur.verdict = cur.verdict || { v: '', note: '' };
     photoCache.clear(); thumbCache.clear(); openSet.clear(); hintSet.clear();
     const photos = await store.photosOf(id);
-    photos.forEach((p) => { photoCache.set(p.id, p.data); if (p.thumb) thumbCache.set(p.id, p.thumb); });
+    photoGeo.clear();
+    photos.forEach((p) => { photoCache.set(p.id, p.data); if (p.thumb) thumbCache.set(p.id, p.thumb); if (p.geo) photoGeo.set(p.id, p.geo); });
     setTimeout(() => fillThumbs(id, photos.filter((p) => !p.thumb)), 300);
-    geoStart();
+    geoStart(); scheduleSync(2500);
     go('insp', { tab, q: '', filter: 'all' });
   }
 
@@ -375,6 +378,7 @@
     return `${topbar({ title: cur.info.project || 'Chưa đặt tên', sub: `${(PURPOSE[cur.info.purpose] || PURPOSE.handover).label} · ${fmtDate(cur.info.date)} · ${n.pct}% hoàn thành`, progress: n.pct })}
     <main class="wrap">
       ${stats(n)}
+      ${syncBar()}
       <div class="search">${I.search}<input class="inp" id="q" type="search" placeholder="Tìm mã, nội dung, ghi chú…" value="${esc(S.q)}" data-search></div>
       ${filterChips()}
       ${list}
@@ -684,7 +688,7 @@
       const d = JSON.parse(await file.text());
       if (d.app !== 'pv-handover' || !d.insp) throw new Error('bad');
       const insp = d.insp;
-      if (await store.get('insp', insp.id)) { insp.id = uid(); insp.info.project = (insp.info.project || '') + ' (bản nhập)'; }
+      if (await store.get('insp', insp.id)) { insp.id = uid(); insp.info.project = (insp.info.project || '') + ' (bản nhập)'; delete insp.lark; }
       const map = {};
       for (const p of d.photos || []) { const nid = uid(); map[p.id] = nid; await store.put('photos', { id: nid, insp: insp.id, data: p.data, ts: Date.now() }); }
       for (const r of Object.values(insp.res || {})) if (r.ph) r.ph = r.ph.map((id) => map[id]).filter(Boolean);
@@ -734,6 +738,7 @@
           ${canShare ? `<button class="btn primary block" data-act="pdf-share">${I.share} Chia sẻ / Lưu vào Tệp, Zalo, Mail…</button>` : ''}
           <button class="btn ${canShare ? '' : 'primary'} block" data-act="pdf-download">${I.save} Tải về máy</button>
           <button class="btn block" data-act="pdf-open">${I.doc} Mở xem</button>
+          ${larkReady() ? `<button class="btn block" data-act="pdf-lark">${I.upload} Lưu PDF vào Lark Base</button>` : ''}
           <button class="btn ghost block" data-act="close">Đóng</button>
         </div>`);
     } catch (e) {
@@ -915,7 +920,7 @@
   async function savePhoto(c, made) {
     const id = uid();
     await store.put('photos', { id, insp: cur.id, code: c, data: made.data, thumb: made.thumb, geo: made.geo, ts: Date.now() });
-    photoCache.set(id, made.data); thumbCache.set(id, made.thumb);
+    photoCache.set(id, made.data); thumbCache.set(id, made.thumb); if (made.geo) photoGeo.set(id, made.geo);
     const r = R(c); r.ph = r.ph || []; r.ph.push(id); touch();
     return id;
   }
@@ -1069,6 +1074,130 @@
       <div class="viewer-bar bottom"><span></span><button class="btn danger" data-act="ph-del" data-c="${c}" data-id="${id}">${I.trash} Xóa ảnh</button></div></div>`;
   }
 
+  /* ---------------- đồng bộ Lark Base (qua máy chủ cầu nối) ---------------- */
+  // Dữ liệu vẫn lưu trên máy trước; đồng bộ chạy nền khi có mạng và đã đăng nhập Lark.
+  // insp.lark = { rec, sumH, pdf, at, items: { [code]: { rec, h, ph: { [photoId]: file_token } } } }
+  const larkReady = () => !!(settings.larkUrl && settings.larkToken);
+  const sync = { running: false, again: false, timer: null, state: 'idle', msg: '', pendingPh: 0, at: 0 };
+  const hashOf = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+  async function larkApi(p, body) {
+    let r;
+    try {
+      r = await fetch(settings.larkUrl.replace(/\/$/, '') + p, {
+        method: body ? 'POST' : 'GET',
+        headers: Object.assign({ Authorization: 'Bearer ' + settings.larkToken }, body ? { 'Content-Type': 'application/json' } : {}),
+        body: body ? JSON.stringify(body) : undefined
+      });
+    } catch (e) { throw new Error('Không kết nối được máy chủ đồng bộ'); }
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { settings.larkToken = ''; lsSet('pvho-settings', settings); throw new Error('Phiên đăng nhập Lark đã hết hạn – vào Cài đặt để đăng nhập lại'); }
+    if (!r.ok) throw new Error(j.error || 'Lỗi máy chủ đồng bộ (HTTP ' + r.status + ')');
+    return j;
+  }
+  function larkLogin() {
+    const ret = location.origin + location.pathname;
+    location.href = settings.larkUrl.replace(/\/$/, '') + '/auth/login?return=' + encodeURIComponent(ret);
+  }
+  function scheduleSync(ms = 8000) {
+    if (!larkReady() || !cur) return;
+    clearTimeout(sync.timer); sync.timer = setTimeout(() => runSync(), ms);
+  }
+  function setSync(state, msg) { sync.state = state; sync.msg = msg || ''; const el = document.getElementById('sync-bar'); if (el) el.outerHTML = syncBar(); }
+  function syncBar() {
+    if (!settings.larkUrl) return '';
+    let txt, cls = '', btn = '';
+    if (!settings.larkToken) { txt = 'Lark: chưa đăng nhập'; cls = 'warn'; btn = '<button class="btn" data-act="lark-login">Đăng nhập Lark</button>'; }
+    else if (sync.state === 'running') txt = 'Lark: đang đồng bộ…' + (sync.pendingPh ? ` còn ${sync.pendingPh} ảnh` : '');
+    else if (sync.state === 'error') { txt = 'Lark: ' + sync.msg; cls = 'err'; btn = '<button class="btn" data-act="lark-sync">Thử lại</button>'; }
+    else if (navigator.onLine === false) { txt = 'Lark: đang offline – sẽ đồng bộ khi có mạng'; cls = 'warn'; }
+    else {
+      const at = cur && cur.lark && cur.lark.at;
+      txt = at ? `Lark: đã đồng bộ lúc ${fmtDT(at).slice(-5)}` : 'Lark: chưa đồng bộ biên bản này';
+      btn = '<button class="btn" data-act="lark-sync">Đồng bộ ngay</button>';
+    }
+    return `<div class="sync-bar ${cls}" id="sync-bar"><span>${esc(txt)}</span>${btn}</div>`;
+  }
+  async function runSync() {
+    if (!larkReady() || !cur || navigator.onLine === false) { setSync(sync.state); return; }
+    if (sync.running) { sync.again = true; return; }
+    const insp = cur; sync.running = true; setSync('running');
+    const save = () => store.put('insp', insp).catch(() => {});
+    try {
+      const L = insp.lark = insp.lark || { rec: '', items: {} };
+      L.items = L.items || {};
+      const f = insp.info, all = allItems(), n = count(all);
+      // 1) Dòng tổng quan biên bản
+      const sum = {
+        'Dự án': f.project, 'Mã dự án': f.pcode, 'Mục đích': (PURPOSE[f.purpose] || PURPOSE.handover).label, 'Loại dự án': CL.types[f.type],
+        'Trạng thái': n.none ? 'Đang kiểm tra' : 'Đã kiểm xong', 'Hoàn thành (%)': n.pct, 'Tổng hạng mục': n.total,
+        'Đạt': n.ok, 'Không đạt': n.nok, 'N/A': n.na, 'Chưa kiểm': n.none, 'Tồn tại A': n.A, 'Tồn tại B': n.B, 'Tồn tại C': n.C,
+        'Kết luận': verdictOf(n).text, 'Ngày kiểm tra': f.date, 'Người kiểm tra': f.inspector, 'Địa điểm': f.address, 'Tọa độ GPS': f.gps,
+        'Công suất DC (kWp)': f.dc, 'Chủ đầu tư': f.owner, 'Bên bàn giao (EPC)': f.epc, 'Đơn vị O&M': f.om, 'Biên bản PDF': L.pdf ? [L.pdf] : []
+      };
+      const sh = hashOf(JSON.stringify(sum));
+      if (!L.rec || L.sumH !== sh) {
+        const d = await larkApi('/api/sync/inspection', { inspId: insp.id, recordId: L.rec || '', data: sum });
+        L.rec = d.recordId; L.sumH = sh; await save();
+      }
+      // 2) Ảnh: tải lên từng ảnh mới
+      const queue = [];
+      for (const it of all) {
+        const r = insp.res[it.c] || {}; const li = L.items[it.c] = L.items[it.c] || { rec: '', h: '', ph: {} };
+        const ids = (r.ph || []).filter((id) => photoCache.has(id));
+        Object.keys(li.ph).forEach((id) => { if (!ids.includes(id)) delete li.ph[id]; });
+        ids.forEach((id, k) => { if (!li.ph[id]) queue.push({ c: it.c, id, k }); });
+      }
+      sync.pendingPh = queue.length; setSync('running');
+      for (const q of queue) {
+        if (cur !== insp) break;
+        const data = photoCache.get(q.id); if (!data) { sync.pendingPh--; continue; }
+        const d = await larkApi('/api/upload', { kind: 'image', name: `${q.c}_${q.k + 1}.jpg`, data: data.split(',')[1] });
+        L.items[q.c].ph[q.id] = d.file_token; sync.pendingPh--; setSync('running'); await save();
+      }
+      // 3) Từng hạng mục: chỉ gửi những dòng đã thay đổi
+      const changed = [];
+      for (const it of all) {
+        const r = insp.res[it.c] || {}; const li = L.items[it.c]; const sec = secById(it.secId);
+        const toks = (r.ph || []).map((id) => li.ph[id]).filter(Boolean);
+        const g = (r.ph || []).map((id) => photoGeo.get(id)).find(Boolean);
+        const data = {
+          'Dự án': f.project, 'Phần': `${sec.part}. ${sec.partTitle}`, 'Nhóm': sec.title, 'Nhóm con': it.g || '', 'Mã hạng mục': it.c,
+          'Nội dung kiểm tra': it.t, 'Kết quả': r.s ? ST[r.s] : 'Chưa kiểm', 'Mức độ': r.s === 'nok' ? (r.sev || 'B') : '',
+          'Ghi chú / mô tả tồn tại': r.note || '', 'Giá trị đo': r.val || '', 'Đơn vị': it.u || '', 'Trách nhiệm': r.s === 'nok' ? (r.resp || '') : '',
+          'Hạn khắc phục': r.s === 'nok' ? (r.due || '') : '', 'Ảnh': toks, 'Số ảnh': toks.length, 'Vị trí GPS': g ? `${g.lat.toFixed(6)}, ${g.lng.toFixed(6)}` : ''
+        };
+        const h = hashOf(JSON.stringify(data) + L.rec);
+        if (!li.rec || li.h !== h) changed.push({ c: it.c, h, key: `${insp.id}|${it.c}`, recordId: li.rec || '', data });
+      }
+      for (let i = 0; i < changed.length; i += 100) {
+        const chunk = changed.slice(i, i + 100);
+        const d = await larkApi('/api/sync/items', { inspId: insp.id, inspRecordId: L.rec, items: chunk.map(({ key, recordId, data }) => ({ key, recordId, data })) });
+        chunk.forEach((x) => { const rec = d.ids && d.ids[x.key]; if (rec) { L.items[x.c].rec = rec; L.items[x.c].h = x.h; } });
+        await save();
+      }
+      L.at = Date.now(); await save();
+      setSync('ok');
+    } catch (e) {
+      setSync('error', e.message || 'lỗi đồng bộ');
+    } finally {
+      sync.running = false;
+      if (sync.again) { sync.again = false; scheduleSync(1500); }
+    }
+  }
+  window.addEventListener('online', () => scheduleSync(1500));
+  window.addEventListener('offline', () => setSync(sync.state));
+  async function larkSavePdf() {
+    if (!pdfOut || !cur) return;
+    const btn = document.querySelector('[data-act=pdf-lark]'); if (btn) { btn.disabled = true; btn.textContent = 'Đang gửi PDF lên Lark…'; }
+    try {
+      const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(pdfOut.blob); });
+      const d = await larkApi('/api/upload', { kind: 'file', name: pdfOut.name, data: b64 });
+      cur.lark = cur.lark || { rec: '', items: {} }; cur.lark.pdf = d.file_token; cur.lark.sumH = '';
+      await store.put('insp', cur); toast('Đã lưu PDF vào Lark Base'); runSync();
+      if (btn) btn.textContent = 'Đã lưu PDF vào Lark';
+    } catch (e) { toast(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Lưu PDF vào Lark Base'; } }
+  }
+
   /* ---------------- modals ---------------- */
   function openModal(inner) { $modal.innerHTML = `<div class="modal-bg" data-act="bg"><div class="modal" role="dialog" aria-modal="true">${inner}</div></div>`; }
   function closeModal() { if (document.getElementById('cam')) { closeCamera(); return; } $modal.innerHTML = ''; }
@@ -1088,6 +1217,8 @@
         <option value="off" ${geoOn() ? '' : 'selected'}>Không gắn vị trí</option></select></div>
       <div class="field"><label for="s-theme">Giao diện</label><select class="inp" id="s-theme">
         ${[['system', 'Theo hệ thống'], ['light', 'Sáng – dễ đọc ngoài nắng'], ['dark', 'Tối']].map(([k, l]) => `<option value="${k}" ${settings.theme === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label for="s-lark">Máy chủ đồng bộ Lark Base</label><input class="inp" id="s-lark" inputmode="url" placeholder="https://lark-bridge.raitek.vn" value="${esc(settings.larkUrl || '')}"></div>
+      ${settings.larkUrl ? `<div class="row">${settings.larkToken ? `<span class="grow small">Đã đăng nhập Lark: <b>${esc(settings.larkUser || '')}</b></span><button class="btn" data-act="lark-logout">Đăng xuất</button>` : `<span class="grow small muted">Chưa đăng nhập Lark</span><button class="btn primary" data-act="lark-login">Đăng nhập Lark</button>`}</div>` : ''}
       <p class="muted small" style="margin:0">Bộ checklist ${esc(CL.version)}. Cài lên màn hình chính: Safari → Chia sẻ → "Thêm vào MH chính"; Chrome → ⋮ → "Cài đặt ứng dụng".</p>
       <div class="modal-actions"><button class="btn" data-act="close">Đóng</button><button class="btn primary" data-act="save-settings">Lưu</button></div>`);
   }
@@ -1162,6 +1293,7 @@
         settings.om = document.getElementById('s-om').value.trim();
         settings.theme = document.getElementById('s-theme').value;
         settings.geoStamp = document.getElementById('s-geo').value === 'on';
+        { const u = document.getElementById('s-lark').value.trim().replace(/\/$/, ''); if (u !== (settings.larkUrl || '')) { settings.larkUrl = u; settings.larkToken = ''; settings.larkUser = ''; } }
         lsSet('pvho-settings', settings); applyTheme(); closeModal(); toast('Đã lưu cài đặt'); break;
       case 'close': closeModal(); break;
       case 'cam-open': openCamera(c); break;
@@ -1240,6 +1372,15 @@
       case 'share-html': shareOrDownload(new Blob([standaloneHTML()], { type: 'text/html' }), baseName() + '.html', PURPOSE[cur.info.purpose || 'handover'].title); break;
       case 'print': doPrint(); break;
       case 'export-pdf': exportPDF(); break;
+      case 'pdf-lark': larkSavePdf(); break;
+      case 'lark-sync': runSync(); break;
+      case 'lark-login': {
+        const inp = document.getElementById('s-lark');
+        if (inp) { settings.larkUrl = inp.value.trim().replace(/\/$/, ''); lsSet('pvho-settings', settings); }
+        if (!settings.larkUrl) { toast('Nhập địa chỉ máy chủ đồng bộ trước'); break; }
+        flush(); larkLogin(); break;
+      }
+      case 'lark-logout': settings.larkToken = ''; settings.larkUser = ''; lsSet('pvho-settings', settings); closeModal(); toast('Đã đăng xuất Lark'); render(false); break;
       case 'pdf-share': pdfShare(); break;
       case 'pdf-download': if (pdfOut) { download(pdfOut.blob, pdfOut.name); toast('Đã tải file: ' + pdfOut.name); } break;
       case 'pdf-open': pdfOpen(); break;
@@ -1348,6 +1489,22 @@
         document.body.appendChild(bar);
       });
     }
+    // Đăng nhập Lark: máy chủ cầu nối trả token về qua #lark_token=...
+    try {
+      const qs = new URLSearchParams(location.search);
+      if (qs.get('lark') && !settings.larkUrl) { settings.larkUrl = qs.get('lark').replace(/\/$/, ''); lsSet('pvho-settings', settings); }
+      const hs = new URLSearchParams(location.hash.slice(1));
+      if (hs.get('lark_token')) {
+        settings.larkToken = hs.get('lark_token');
+        try { const bin = atob(settings.larkToken.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')); settings.larkUser = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)))).name || ''; } catch (e) { /* ignore */ }
+        lsSet('pvho-settings', settings); toast('Đã đăng nhập Lark' + (settings.larkUser ? ': ' + settings.larkUser : ''));
+      } else if (hs.get('lark_error')) toast(hs.get('lark_error'), 4000);
+      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+      // Mở từ trong ứng dụng Lark mà chưa đăng nhập: tự đăng nhập một lần.
+      if (settings.larkUrl && !settings.larkToken && /Lark|Feishu/i.test(navigator.userAgent) && !sessionStorage.getItem('pvho-lark-tried')) {
+        sessionStorage.setItem('pvho-lark-tried', '1'); larkLogin(); return;
+      }
+    } catch (e) { /* ignore */ }
     loadHome();
   })();
 })();

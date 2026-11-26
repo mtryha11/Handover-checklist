@@ -29,6 +29,9 @@
   **sao chép tóm tắt** dạng text.
 - **Sao lưu / khôi phục** file `.json` (gồm cả ảnh) để chuyển máy hoặc lưu hồ sơ.
 
+- **Đồng bộ Lark Base** (tùy chọn): mở app ngay trong Lark Workplace, tự đẩy % hoàn thành, kết quả từng hạng mục,
+  ảnh và PDF lên Lark Base qua cầu nối chạy trên máy chủ nội bộ. Xem [docs/LARK-SETUP.md](docs/LARK-SETUP.md).
+
 ## Cài lên điện thoại
 
 1. Mở đường dẫn GitHub Pages của ứng dụng (xem mục bên dưới) bằng **Safari** (iPhone) hoặc **Chrome** (Android).
@@ -78,6 +81,8 @@ js/vendor/            thư viện PDF + font, chạy offline (xem LICENSES.md)
 sw.js                 service worker – chạy offline
 manifest.webmanifest  thông tin cài đặt PWA
 tools/build_artifact.py  đóng gói 1 file HTML để xem trước
+server/               cầu nối Lark Base (Node.js, chạy trên máy chủ nội bộ)
+docs/LARK-SETUP.md    hướng dẫn kết nối Lark
 ```
 
 Chạy thử trên máy tính: `python3 -m http.server 8000` rồi mở `http://localhost:8000`.
