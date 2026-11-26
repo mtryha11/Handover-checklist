@@ -97,6 +97,21 @@ cd server && docker build -t lark-bridge .
 docker run -d --name lark-bridge --restart always --env-file /opt/lark-bridge/.env -p 8787:8787 lark-bridge
 ```
 
+**OpenWrt / iStoreOS (router)** – đăng nhập SSH bằng root (không có `sudo`):
+
+```sh
+node -v || (opkg update && opkg install node)        # cần Node.js 18 trở lên
+mkdir -p /opt/lark-bridge && cd /opt/lark-bridge
+R=https://raw.githubusercontent.com/mtryha11/Handover-checklist/main/server
+wget -O lark-bridge.mjs $R/lark-bridge.mjs
+wget -O .env $R/.env.example
+wget -O /etc/init.d/lark-bridge $R/lark-bridge.init && chmod +x /etc/init.d/lark-bridge
+vi .env                                              # điền App ID, Secret, Base token, PUBLIC_URL, SESSION_SECRET
+chmod 600 .env && node lark-bridge.mjs setup
+/etc/init.d/lark-bridge enable && /etc/init.d/lark-bridge start
+logread -e lark -f                                   # xem log
+```
+
 ### 4.3 HTTPS và mở ra Internet
 
 Điện thoại ngoài công trường dùng 4G nên cầu nối phải truy cập được từ Internet qua **HTTPS**. Ví dụ Nginx
