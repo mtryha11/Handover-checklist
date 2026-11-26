@@ -454,3 +454,80 @@ window.CHECKLIST = {
     }
   ]
 };
+
+/* ---------------------------------------------------------------------------
+ * Cấu trúc khoa học: Phần (theo dòng năng lượng từ hồ sơ → dàn pin → DC → inverter → AC/lưới
+ * → tiếp địa → giám sát → phụ trợ → an toàn → mặt bằng), trong mỗi nhóm chia nhóm con theo
+ * trình tự: bố trí / lắp đặt → liên kết → vật liệu → đấu nối → vận hành → nhãn, biển báo → đo kiểm.
+ * Chỉ sắp xếp lại thứ tự hiển thị; mã hạng mục giữ nguyên.
+ * ------------------------------------------------------------------------- */
+window.CHECKLIST.parts = [
+  { id: 'A', title: 'Hồ sơ & tài liệu', secs: ['HS'] },
+  { id: 'B', title: 'Lối tiếp cận & an toàn trên mái', secs: ['TL', 'LC', 'ST'] },
+  { id: 'C', title: 'Dàn pin', secs: ['PV', 'KC'] },
+  { id: 'D', title: 'Hệ thống DC & cáp', secs: ['DC', 'MC', 'CB'] },
+  { id: 'E', title: 'Inverter', secs: ['NI', 'INV'] },
+  { id: 'F', title: 'Hệ thống AC & đấu nối lưới', secs: ['AC', 'TBA', 'DD'] },
+  { id: 'G', title: 'Tiếp địa & chống sét', secs: ['TD'] },
+  { id: 'H', title: 'Giám sát & truyền thông', secs: ['GS', 'TT'] },
+  { id: 'I', title: 'Hệ thống phụ trợ', secs: ['NV'] },
+  { id: 'J', title: 'PCCC, khóa & biển báo', secs: ['AT', 'KB'] },
+  { id: 'K', title: 'Mặt bằng & vật tư bàn giao', secs: ['MB', 'VT', 'HQ'] }
+];
+window.CHECKLIST.order = {
+  HS: [['Pháp lý & hợp đồng', 'HS-01 HS-04 HS-02 HS-26 HS-21 HS-24'], ['Bản vẽ & thiết kế', 'HS-05 HS-06 HS-07'],
+    ['Thiết bị & bảo hành', 'HS-08 HS-09 HS-19 HS-20'], ['Nghiệm thu & thí nghiệm', 'HS-03 HS-10 HS-12 HS-13 HS-14 HS-15 HS-16'],
+    ['Vận hành & bàn giao', 'HS-17 HS-18 HS-22 HS-23 HS-25 HQ-06']],
+  TL: [['Bố trí & lắp đặt', 'TL-01 TL-05 TL-09 TL-06'], ['Liên kết & chống rỉ', 'TL-02 TL-03 TL-04 TL-07 TL-08'], ['Biển báo', 'TL-10 TL-11']],
+  LC: [['Bố trí & lắp đặt', 'LC-01 LC-08 LC-03'], ['Liên kết & chống rỉ', 'LC-05 LC-06 LC-07 LC-02 LC-04'], ['Kiểm định', 'AT-06']],
+  ST: [['Bố trí & lắp đặt', 'ST-01 KC-07 ST-06'], ['Liên kết & chống rỉ', 'ST-03 ST-04 ST-05 ST-02']],
+  PV: [['Bố trí & lắp đặt', 'PV-11 PV-06 PV-12 PV-09 PV-15 PV-10'], ['Ngoại quan tấm pin', 'PV-01 PV-02 PV-03 PV-04 PV-05 PV-16'],
+    ['Môi trường xung quanh', 'PV-07 PV-14'], ['Đo kiểm', 'PV-13 PV-08']],
+  KC: [['Bố trí & lắp đặt', 'KC-13 KC-01 KC-14 KC-15 KC-16'], ['Liên kết & lực siết', 'KC-03 KC-17'], ['Vật liệu & chống rỉ', 'KC-02 KC-04'],
+    ['Mái & chống thấm', 'KC-05 KC-06'], ['Móng (mặt đất)', 'KC-08 KC-09'], ['Phao nổi', 'KC-10 KC-11 KC-12']],
+  DC: [['Chủng loại & nhãn cáp', 'DC-01 DC-07'], ['Lắp đặt & bảo vệ cáp', 'DC-02 DC-15 DC-03 DC-18 DC-06 DC-16 DC-08 DC-13'],
+    ['Tình trạng cáp & đầu nối', 'DC-14 DC-04 DC-05 DC-17']],
+  MC: [['Lắp đặt', 'MC-01 MC-05 MC-03'], ['Tình trạng', 'MC-02 MC-04']],
+  CB: [['Vỏ tủ & làm kín', 'CB-01 CB-02'], ['Thiết bị bảo vệ', 'CB-03 CB-04 CB-05'], ['Đấu nối & đo kiểm', 'CB-06'], ['Nhãn & cảnh báo', 'CB-07']],
+  NI: [['Bố trí & kết cấu', 'NI-05 NI-02 NI-08 NI-01 NI-03'], ['Vật liệu & chống rỉ', 'NI-04 NI-06 NI-09 NI-10'],
+    ['Môi trường vận hành', 'NI-11 NI-13 NI-14'], ['Chiếu sáng & ổ cắm', 'NI-07 NI-12']],
+  INV: [['Bố trí & lắp đặt', 'INV-14 INV-01 INV-02 INV-21'], ['Nhãn & nhận dạng', 'INV-13 INV-15 INV-16'], ['Vỏ & làm kín', 'INV-17 INV-18 INV-03'],
+    ['Đấu nối & tiếp địa', 'INV-05 INV-20 INV-22 INV-04 INV-19 INV-06'], ['Vận hành & cài đặt', 'INV-07 INV-08 INV-09 INV-10'],
+    ['Đo kiểm nhiệt độ & độ ồn', 'INV-23 INV-24 INV-25 INV-26 INV-27 INV-28']],
+  AC: [['Bố trí & vỏ tủ', 'AC-10 AC-16 AC-01 AC-13 AC-14'], ['Thiết bị đóng cắt & bảo vệ', 'AC-02 AC-09 AC-04 AC-06 AC-05 AC-15'],
+    ['Thanh cái & đấu nối', 'AC-12 AC-03 AC-07'], ['Nhãn & tài liệu', 'AC-11 AC-08 AC-18'], ['Đo kiểm nhiệt độ', 'AC-17 AC-19 AC-20']],
+  TBA: [['Mặt bằng trạm', 'TBA-13 TBA-14 TBA-10'], ['Máy biến áp', 'TBA-15 TBA-01 TBA-02 TBA-03 TBA-04 TBA-05'],
+    ['Thiết bị trung thế & bảo vệ', 'TBA-06 TBA-07 TBA-08 TBA-09 TBA-12'], ['Dụng cụ an toàn', 'TBA-11']],
+  DD: [['Công tơ & đo đếm', 'DD-01 DD-04 DD-05 DD-06'], ['Chốt chỉ số', 'DD-02 DD-03 DD-07 DD-08 DD-09']],
+  TD: [['Thiết kế hệ thống', 'TD-06 TD-16 TD-05 TD-18'], ['Tiếp địa kết cấu & thiết bị', 'TD-08 TD-09 TD-10 TD-11 TD-12 TD-13 TD-14 TD-15 TD-01'],
+    ['Dây & mối nối', 'TD-07 TD-02 TD-19'], ['Chống sét', 'TD-04'], ['Đo kiểm', 'TD-17 TD-03']],
+  GS: [['Hệ thống giám sát', 'GS-01 GS-02 GS-04 GS-06 GS-07 GS-08'], ['Tủ monitoring', 'GS-09 GS-10 GS-11 GS-12 GS-13 GS-14'],
+    ['Internet', 'GS-15 GS-16 GS-05 GS-17']],
+  TT: [['Lắp đặt', 'TT-01 TT-02 TT-06 TT-04 TT-03'], ['Vị trí cảm biến', 'TT-07 TT-08'], ['Vận hành & hiệu chuẩn', 'TT-05 TT-10 TT-09']],
+  NV: [['Bồn, bể & giá đỡ', 'NV-01 NV-20 NV-04 NV-19'], ['Bơm & điện', 'NV-03 NV-09 NV-05 NV-10 NV-11 NV-12'],
+    ['Đường ống & van', 'NV-06 NV-02 NV-13 NV-14 NV-17'], ['Vật liệu & chống rỉ', 'NV-15 NV-16 NV-07'], ['Đồng hồ nước', 'NV-08 NV-18']],
+  AT: [['Phương tiện chữa cháy', 'AT-11 AT-01 AT-15'], ['Báo cháy', 'AT-12 AT-13 AT-02'], ['An toàn & khẩn cấp', 'AT-03 AT-07 AT-14 AT-08 AT-09'],
+    ['Nội quy & biển báo', 'AT-16 AT-04']],
+  KB: [['Khóa', 'KB-01 KB-02 KB-03'], ['Biển cảnh báo & thông tin', 'KB-05 KB-06 KB-07 KB-04 KB-08']],
+  MB: [['Mái & kết cấu sau thi công', 'MB-08 MB-09 MB-11'], ['Vệ sinh mặt bằng', 'MB-10 MB-12 MB-07'], ['Hạ tầng (mặt đất / nổi)', 'MB-01 MB-02 MB-03 MB-04 MB-06']],
+  VT: [['Vật tư & dụng cụ', 'VT-01 VT-02 VT-03 VT-04 VT-05']]
+};
+
+// Áp dụng cấu trúc: sắp nhóm theo Phần, sắp hạng mục theo nhóm con (gán it.g).
+(function (CL) {
+  const partOf = {};
+  CL.parts.forEach((p) => p.secs.forEach((id) => { partOf[id] = p; }));
+  CL.sections.forEach((s) => {
+    const p = partOf[s.id]; s.part = p ? p.id : 'Z'; s.partTitle = p ? p.title : 'Khác';
+    const order = CL.order[s.id] || [];
+    const byCode = {}; s.items.forEach((it) => { byCode[it.c] = it; });
+    const used = new Set(); const items = [];
+    order.forEach(([g, codes]) => codes.split(/\s+/).forEach((c) => {
+      const it = byCode[c]; if (it && !used.has(c)) { it.g = g; used.add(c); items.push(it); }
+    }));
+    s.items.forEach((it) => { if (!used.has(it.c)) { it.g = it.x ? 'Đã bỏ khỏi checklist' : 'Khác'; items.push(it); } });
+    s.items = items;
+  });
+  const rank = (s) => { const pi = CL.parts.findIndex((p) => p.id === s.part); const p = CL.parts[pi]; return (pi < 0 ? 99 : pi) * 100 + (p ? p.secs.indexOf(s.id) : 0); };
+  CL.sections.sort((a, b) => rank(a) - rank(b));
+})(window.CHECKLIST);

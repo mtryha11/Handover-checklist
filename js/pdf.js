@@ -175,12 +175,17 @@
     table({ body: infoBody, columnStyles: { 0: lab, 2: lab } });
 
     /* ----- 2. tổng hợp ----- */
-    heading(`${k++}. Tổng hợp kết quả`);
+    // Bảng tổng hợp giữ trọn một trang (không để dòng "PHẦN …" rơi lẻ cuối trang).
+    const sumRows = m.summary.length + new Set(m.summary.map((r) => r.part)).size + 2;
+    heading(`${k++}. Tổng hợp kết quả`, Math.min(sumRows * 5.6 + 14, BOTTOM - M - 20));
     const c = { halign: 'center', cellWidth: 17 };
     table({
       head: [['Nhóm hạng mục', 'Tổng', 'Đạt', 'Không đạt', 'N/A', 'Chưa KT']],
-      body: m.summary.map((r) => r.map(fx)).concat([[{ content: 'Tổng cộng', styles: { fontStyle: 'bold' } }].concat(m.totals.map((v) => ({ content: String(v), styles: { fontStyle: 'bold' } })))]),
-      columnStyles: { 1: c, 2: c, 3: { halign: 'center', cellWidth: 21 }, 4: c, 5: c }
+      body: m.summary.flatMap((r, i) => (i === 0 || m.summary[i - 1].part !== r.part
+        ? [[{ content: fx(`PHẦN ${r.part} – ${r.partTitle}`).toUpperCase(), colSpan: 6, styles: { fontStyle: 'bold', fillColor: INDIGO, textColor: [255, 255, 255] } }]] : [])
+        .concat([r.cells.map((v, k) => k === 0 ? { content: fx(v), styles: { cellPadding: { top: 1.6, bottom: 1.6, left: 4, right: 1.6 } } } : fx(v))])).concat([[{ content: 'Tổng cộng', styles: { fontStyle: 'bold' } }].concat(m.totals.map((v) => ({ content: String(v), styles: { fontStyle: 'bold' } })))]),
+      columnStyles: { 1: c, 2: c, 3: { halign: 'center', cellWidth: 21 }, 4: c, 5: c },
+      styles: { font: 'NS', fontSize: 8.6, cellPadding: 1.15, lineColor: GRID, lineWidth: 0.2, textColor: [25, 25, 35], overflow: 'linebreak', valign: 'middle' }
     });
     para(m.sevLine, { size: 9, color: [70, 70, 90], gap: 2 });
 
@@ -234,9 +239,16 @@
     newPage();
     heading(`Phụ lục ${ax++}. Chi tiết kết quả kiểm tra`);
     const body = [];
+    let lastPart = '';
     for (const sec of m.detail) {
+      if (sec.part !== lastPart) {
+        body.push([{ content: fx(`PHẦN ${sec.part} – ${sec.partTitle}`).toUpperCase(), colSpan: 5, styles: { fontStyle: 'bold', fillColor: INDIGO, textColor: [255, 255, 255] } }]);
+        lastPart = sec.part;
+      }
       body.push([{ content: fx(sec.title), colSpan: 5, styles: { fontStyle: 'bold', fillColor: TINT, textColor: INDIGO } }]);
+      let lg = null;
       for (const r of sec.rows) {
+        if (r.g && r.g !== lg) { body.push([{ content: fx(r.g), colSpan: 5, styles: { fontStyle: 'bold', fontSize: 8.3, fillColor: [251, 247, 230], textColor: [90, 69, 0], cellPadding: 1.1 } }]); lg = r.g; }
         body.push([fx(r.c), fx(r.t),
           { content: fx(r.res) + (r.sev ? ` (${r.sev})` : ''), styles: { textColor: STC[r.s || 'none'], fontStyle: r.s === 'na' ? 'normal' : 'bold', halign: 'center' } },
           { content: fx(r.val), styles: { halign: 'center' } }, fx(r.note)]);

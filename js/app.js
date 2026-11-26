@@ -148,7 +148,7 @@
   };
 
   /* ---------------- state ---------------- */
-  const settings = Object.assign({ inspector: '', om: '', theme: 'system' }, lsGet('pvho-settings', {}));
+  const settings = Object.assign({ inspector: '', om: '', theme: 'system', geoStamp: true }, lsGet('pvho-settings', {}));
   const S = { view: 'home', tab: 'check', sec: null, filter: 'all', q: '', list: [], isNew: false, focus: null };
   let cur = null;            // inspection đang mở
   const photoCache = new Map(); // ảnh gốc (chỉ dùng khi xem từng ảnh và khi xuất file)
@@ -178,7 +178,7 @@
   // Hạng mục đã bỏ (x) chỉ hiện khi biên bản này đã có kết quả / ghi chú / ảnh cho nó.
   const hasData = (c) => { const r = cur.res[c]; return !!(r && (r.s || r.note || r.val || (r.ph && r.ph.length))); };
   const applies = (it) => (!it.s || it.s.split(' ').includes(cur.info.type)) && (!it.x || hasData(it.c));
-  const secItems = (sec) => sec.items.filter(applies).concat((cur.custom || []).filter((x) => x.sec === sec.id));
+  const secItems = (sec) => sec.items.filter(applies).concat((cur.custom || []).filter((x) => x.sec === sec.id).map((x) => Object.assign({ g: 'Hạng mục bổ sung' }, x)));
   const allItems = () => CL.sections.flatMap((sec) => secItems(sec).map((it) => Object.assign({ secId: sec.id }, it)));
   const secById = (id) => CL.sections.find((s) => s.id === id);
   const R = (c) => cur.res[c] || (cur.res[c] = {});
@@ -215,7 +215,7 @@
   }
   function goUp() {
     if (S.view === 'sec') go('insp', { tab: 'check' });
-    else if (S.view === 'insp' || S.view === 'info') { flush(); cur = null; loadHome(); }
+    else if (S.view === 'insp' || S.view === 'info') { flush(); cur = null; geoStop(); loadHome(); }
     else loadHome();
   }
   window.addEventListener('popstate', () => {
@@ -235,6 +235,7 @@
     const photos = await store.photosOf(id);
     photos.forEach((p) => { photoCache.set(p.id, p.data); if (p.thumb) thumbCache.set(p.id, p.thumb); });
     setTimeout(() => fillThumbs(id, photos.filter((p) => !p.thumb)), 300);
+    geoStart();
     go('insp', { tab, q: '', filter: 'all' });
   }
 
@@ -358,10 +359,13 @@
       const items = filterItems(all);
       list = items.length ? `<div class="items">${items.map((it) => itemHTML(it, true)).join('')}</div>` : '<div class="card empty"><p>Không có hạng mục phù hợp.</p></div>';
     } else {
+      let lastPart = '';
       list = `<div class="sec-list">${CL.sections.map((sec) => {
         const its = secItems(sec); if (!its.length) return '';
         const c = count(its);
-        return `<button class="card sec-row" data-act="sec" data-v="${sec.id}">
+        const head = sec.part !== lastPart ? `<div class="part-head"><span class="part-id">${esc(sec.part)}</span><span>${esc(sec.partTitle)}</span></div>` : '';
+        lastPart = sec.part;
+        return head + `<button class="card sec-row" data-act="sec" data-v="${sec.id}">
           <span class="sec-code ${c.none === 0 ? 'done' : ''}">${sec.id}</span>
           <span style="min-width:0"><h3>${esc(sec.title)}</h3>
             <span class="sub"><span>${c.done}/${c.total}</span>${c.nok ? `<span style="color:var(--nok);font-weight:600">${c.nok} không đạt</span>` : ''}${c.na ? `<span>${c.na} N/A</span>` : ''}</span>${bar(c)}</span>
@@ -384,10 +388,10 @@
     const visibleSecs = CL.sections.filter((s) => secItems(s).length);
     const vi = visibleSecs.findIndex((s) => s.id === sec.id);
     const prev = visibleSecs[vi - 1], next = visibleSecs[vi + 1];
-    return `${topbar({ title: sec.title, sub: `${cur.info.project || ''} · ${n.done}/${n.total} hạng mục`, progress: count(allItems()).pct })}
+    return `${topbar({ title: sec.title, sub: `Phần ${sec.part} · ${sec.partTitle} · ${n.done}/${n.total} hạng mục`, progress: count(allItems()).pct })}
     <main class="wrap">
       <div class="sec-head">${stats(n)}${filterChips()}</div>
-      <div class="items">${shown.map((it) => itemHTML(it, false)).join('') || '<div class="card empty"><p>Không có hạng mục phù hợp bộ lọc.</p></div>'}</div>
+      <div class="items">${groupedItems(shown) || '<div class="card empty"><p>Không có hạng mục phù hợp bộ lọc.</p></div>'}</div>
       <div class="btn-grid">
         <button class="btn" data-act="add-item">${I.plus} Thêm hạng mục</button>
         ${n.none ? `<button class="btn ghost" data-act="sec-na">Đánh N/A ${n.none} mục chưa kiểm</button>` : ''}
@@ -399,6 +403,13 @@
     </main>${tabbar()}`;
   }
 
+  function groupedItems(items) {
+    let lg = null;
+    return items.map((it) => {
+      const h = it.g && it.g !== lg ? `<h3 class="grp">${esc(it.g)}</h3>` : '';
+      lg = it.g; return h + itemHTML(it, false);
+    }).join('');
+  }
   function photosHTML(c, ids, removable) {
     return (ids || []).map((id) => photoCache.has(id) ? `<button class="ph" data-act="ph-view" data-c="${c}" data-id="${id}" aria-label="Xem ảnh"><img src="${thumbCache.get(id) || PH_BLANK}" data-ph="${id}" alt="" loading="lazy" decoding="async"></button>` : '').join('');
   }
@@ -415,15 +426,16 @@
           <div class="field"><label for="du-${c}">Hạn khắc phục</label><input class="inp" type="date" id="du-${c}" data-f="due" data-c="${c}" value="${esc(r.due || '')}"></div></div>` : ''}
         ${nph ? `<div class="photos">${photosHTML(c, r.ph)}</div>` : ''}
         <div class="photo-add">
-          <label class="btn">${I.cam} Chụp ảnh<input type="file" accept="image/*" capture="environment" data-photo="${c}"></label>
-          <label class="btn">${I.img} Chọn từ máy<input type="file" accept="image/*" multiple data-photo="${c}"></label>
+          <button class="btn" data-act="cam-open" data-c="${c}">${I.cam} Chụp ảnh</button>
+          <label class="btn">${I.img} Chọn từ máy<input type="file" accept="image/*" multiple data-photo="${c}" data-src="lib"></label>
         </div>
         ${it.custom ? `<button class="btn danger" data-act="del-item" data-c="${c}">${I.trash} Xóa hạng mục bổ sung</button>` : ''}
       </div>` : '';
     const moreLabel = [r.note ? 'có ghi chú' : '', nph ? `${nph} ảnh` : ''].filter(Boolean).join(', ');
     return `<article class="card item ${st ? 'st-' + st : ''}" id="it-${c}">
       <div class="item-head"><div style="min-width:0"><div class="item-code">${c}${it.custom ? ' · bổ sung' : ''}${it.x ? ' · đã bỏ khỏi checklist' : ''}${secName ? ` · <span class="sec-name">${esc(secName)}</span>` : ''}</div><p class="item-t">${esc(it.t)}</p></div>
-        ${it.h ? `<button class="info-btn ${hintOn ? 'on' : ''}" data-act="hint" data-c="${c}" aria-label="Tiêu chí đánh giá" aria-expanded="${hintOn}">i</button>` : ''}</div>
+        <div class="item-tools">${it.h ? `<button class="info-btn ${hintOn ? 'on' : ''}" data-act="hint" data-c="${c}" aria-label="Tiêu chí đánh giá" aria-expanded="${hintOn}">i</button>` : ''}<button class="info-btn cam-quick" data-act="cam-open" data-c="${c}" aria-label="Chụp ảnh hạng mục ${c}">${I.cam}${nph ? `<span>${nph}</span>` : ''}</button>
+          <input type="file" accept="image/*" capture="environment" data-photo="${c}" data-src="cam" id="capin-${c}" hidden></div></div>
       ${it.h && hintOn ? `<p class="hint">${esc(it.h)}</p>` : ''}
       <div class="seg" role="group" aria-label="Kết quả">
         <button class="s-ok ${st === 'ok' ? 'on' : ''}" data-act="st" data-v="ok" data-c="${c}" aria-pressed="${st === 'ok'}">${I.check} Đạt</button>
@@ -534,7 +546,7 @@
         ['Người kiểm tra', f.inspector], ['Thời tiết', [f.weather, f.irr ? f.irr + ' W/m²' : '', f.temp ? f.temp + ' °C' : ''].filter(Boolean).join(' · ')]
       ].map(([a, b]) => [a, b || '']),
       team: f.team || '',
-      summary: secs.map(({ s, its }) => { const c = count(its); return [`${s.id} – ${s.title}`, c.total, c.ok, c.nok, c.na, c.none].map(String); }),
+      summary: secs.map(({ s, its }) => { const c = count(its); return { part: s.part, partTitle: s.partTitle, cells: [`${s.id} – ${s.title}`, c.total, c.ok, c.nok, c.na, c.none].map(String) }; }),
       totals: [n.total, n.ok, n.nok, n.na, n.none],
       counts: n,
       sevLine: `Tồn tại theo mức độ: A ${n.A} · B ${n.B} · C ${n.C}. A – ${SEV.A.short}: ${SEV.A.desc} B – ${SEV.B.short}: ${SEV.B.desc} C – ${SEV.C.short}: ${SEV.C.desc}`,
@@ -545,10 +557,10 @@
       verdict: verdictOf(n).text, verdictNote: cur.verdict.note || '',
       signs: SIGN_ROLES.map((r) => { const s = cur.sign[r.k] || {}; return { label: r.label, org: f[r.org] || '', name: s.name || '', title: s.title || '', img: s.img || '' }; }),
       detail: secs.map(({ s, its }) => ({
-        title: `${s.id} – ${s.title}`,
+        title: `${s.id} – ${s.title}`, part: s.part, partTitle: s.partTitle,
         rows: its.map((it) => {
           const r = cur.res[it.c] || {};
-          return { c: it.c, t: it.t, s: r.s || '', res: r.s ? ST[r.s] : 'Chưa KT', sev: r.s === 'nok' ? (r.sev || 'B') : '', val: r.val ? `${r.val} ${it.u || ''}`.trim() : '', note: r.note || '' };
+          return { g: it.g || '', c: it.c, t: it.t, s: r.s || '', res: r.s ? ST[r.s] : 'Chưa KT', sev: r.s === 'nok' ? (r.sev || 'B') : '', val: r.val ? `${r.val} ${it.u || ''}`.trim() : '', note: r.note || '' };
         })
       })),
       appendix: all.map((it) => ({ it, r: cur.res[it.c] || {} })).filter(({ r }) => r.s !== 'nok' && phs(r).length)
@@ -577,7 +589,7 @@
     const appx = [];
     appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Chi tiết kết quả kiểm tra</h2>
       <table><tr><th>Mã</th><th>Nội dung kiểm tra</th><th class="c">Kết quả</th><th class="c">Giá trị đo</th><th>Ghi chú</th></tr>
-        ${m.detail.map((sec) => `<tr><th colspan="5">${esc(sec.title)}</th></tr>` + sec.rows.map((r) => `<tr><td class="code">${esc(r.c)}</td><td>${esc(r.t)}</td><td class="c">${res(r)}</td><td class="c">${esc(r.val)}</td><td>${esc(r.note)}</td></tr>`).join('')).join('')}</table>`);
+        ${m.detail.map((sec, i) => (i === 0 || m.detail[i - 1].part !== sec.part ? `<tr class="part"><td colspan="5">PHẦN ${esc(sec.part)} – ${esc(sec.partTitle.toUpperCase())}</td></tr>` : '') + `<tr><th colspan="5">${esc(sec.title)}</th></tr>` + sec.rows.map((r, j) => (r.g && (j === 0 || sec.rows[j - 1].g !== r.g) ? `<tr class="grp"><td colspan="5">${esc(r.g)}</td></tr>` : '') + `<tr><td class="code">${esc(r.c)}</td><td>${esc(r.t)}</td><td class="c">${res(r)}</td><td class="c">${esc(r.val)}</td><td>${esc(r.note)}</td></tr>`).join('')).join('')}</table>`);
     if (withPh.length) appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Hình ảnh tồn tại</h2>` + withPh.map((p, i) => photoPage(`Tồn tại ${p.no}/${m.punch.length} · ${p.c}`, p.text, '', metaOf(p), p.photos, p.sev, i === 0)).join(''));
     if (m.appendix.length) appx.push(`<h2 class="appx">Phụ lục ${appx.length + 1}. Hình ảnh hiện trường khác</h2>` + m.appendix.map((a, i) => photoPage(a.c, a.t, a.note, '', a.photos, '', i === 0)).join(''));
     return `<div class="rpt">
@@ -587,7 +599,7 @@
       <h2>${k++}. Thông tin chung</h2><table class="info">${info}</table>
       <h2>${k++}. Tổng hợp kết quả</h2>
       <table class="sum"><tr><th style="text-align:left">Nhóm hạng mục</th><th>Tổng</th><th>Đạt</th><th>Không đạt</th><th>N/A</th><th>Chưa KT</th></tr>
-        ${m.summary.map((r) => `<tr><td style="text-align:left">${esc(r[0])}</td>${r.slice(1).map((v) => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        ${m.summary.map((r, i) => (i === 0 || m.summary[i - 1].part !== r.part ? `<tr class="part"><td colspan="6" style="text-align:left">PHẦN ${esc(r.part)} – ${esc(r.partTitle.toUpperCase())}</td></tr>` : '') + `<tr><td style="text-align:left;padding-left:16px">${esc(r.cells[0])}</td>${r.cells.slice(1).map((v) => `<td>${v}</td>`).join('')}</tr>`).join('')}
         <tr><th style="text-align:left">Tổng cộng</th>${m.totals.map((v) => `<th>${v}</th>`).join('')}</tr></table>
       <p style="margin:6px 0 0">Tồn tại theo mức độ: <span class="sev A">A</span> ${n.A} · <span class="sev B">B</span> ${n.B} · <span class="sev C">C</span> ${n.C}. (A – ${SEV.A.short}: ${SEV.A.desc} B – ${SEV.B.short}: ${SEV.B.desc} C – ${SEV.C.short}: ${SEV.C.desc})</p>
       <h2>${k++}. Danh sách tồn tại</h2>
@@ -640,17 +652,18 @@
       ['Kết quả', `${n.ok} đạt · ${n.nok} không đạt (A ${n.A} / B ${n.B} / C ${n.C}) · ${n.na} N/A · ${n.none} chưa kiểm`],
       ['Kết luận', verdictOf(n).text], ['Ý kiến / kiến nghị', cur.verdict.note || ''], []
     ].map((r) => r.length === 2 ? [{ v: r[0], s: 3 }, r[1] || ''] : r);
-    const head = ['Nhóm', 'Mã', 'Nội dung kiểm tra', 'Kết quả', 'Mức độ', 'Giá trị đo', 'Đơn vị', 'Ghi chú', 'Trách nhiệm', 'Hạn khắc phục', 'Số ảnh'].map(H);
+    const head = ['Phần', 'Nhóm', 'Nhóm con', 'Mã', 'Nội dung kiểm tra', 'Kết quả', 'Mức độ', 'Giá trị đo', 'Đơn vị', 'Ghi chú', 'Trách nhiệm', 'Hạn khắc phục', 'Số ảnh'].map(H);
     const rows = allItems().map((it) => {
       const r = cur.res[it.c] || {};
-      return [W(secById(it.secId).title), W(it.c), W(it.t), W(r.s ? ST[r.s] : 'Chưa KT'), W(r.s === 'nok' ? (r.sev || 'B') : ''), W(r.val || ''), W(it.u || ''), W(r.note || ''), W(r.resp || ''), W(fmtDate(r.due)), W((r.ph || []).length || '')];
+      const sec = secById(it.secId);
+      return [W(`${sec.part}. ${sec.partTitle}`), W(sec.title), W(it.g || ''), W(it.c), W(it.t), W(r.s ? ST[r.s] : 'Chưa KT'), W(r.s === 'nok' ? (r.sev || 'B') : ''), W(r.val || ''), W(it.u || ''), W(r.note || ''), W(r.resp || ''), W(fmtDate(r.due)), W((r.ph || []).length || '')];
     });
     const punch = punchItems().map((it, i) => {
       const r = cur.res[it.c];
       return [W(i + 1), W(it.c), W((r.note || '').trim() || 'Không đạt: ' + it.t), W(r.sev || 'B'), W(r.val ? `${r.val} ${it.u || ''}` : ''), W(r.resp || ''), W(fmtDate(r.due)), W(''), W('')];
     });
     const blob = window.miniXLSX([
-      { name: 'Checklist', widths: [26, 9, 60, 11, 8, 13, 8, 45, 15, 14, 8], rows: info.concat([head], rows) },
+      { name: 'Checklist', widths: [22, 24, 22, 9, 60, 11, 8, 13, 8, 45, 15, 14, 8], rows: info.concat([head], rows) },
       { name: 'Tồn tại', widths: [5, 9, 70, 7, 14, 15, 14, 16, 30], freezeRow: 1, rows: [['TT', 'Mã', 'Nội dung tồn tại', 'Mức', 'Giá trị đo', 'Trách nhiệm', 'Hạn khắc phục', 'Ngày hoàn thành', 'Xác nhận / ghi chú'].map(H)].concat(punch) }
     ]);
     shareOrDownload(blob, baseName() + '.xlsx', 'Checklist ' + cur.info.project);
@@ -747,25 +760,179 @@
 
   /* ---------------- photos ---------------- */
   function loadImage(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
-  async function processPhoto(file, label) {
-    const url = URL.createObjectURL(file);
+
+  /* ----- vị trí GPS ----- */
+  const geo = { fix: null, watch: null, state: 'idle' }; // state: idle | wait | ok | denied
+  const geoOn = () => settings.geoStamp !== false;
+  function geoStart() {
+    if (!geoOn() || !navigator.geolocation || geo.watch !== null) return;
+    geo.state = geo.fix ? 'ok' : 'wait';
     try {
-      const img = await loadImage(url);
-      const max = 1600; const sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
-      const w = Math.round(img.naturalWidth * sc), h = Math.round(img.naturalHeight * sc);
-      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-      const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-      const fs = Math.max(14, Math.round(Math.min(w, h) * 0.032)); const bh = Math.round(fs * 1.8);
-      ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, h - bh, w, bh);
-      ctx.fillStyle = '#fff'; ctx.font = `600 ${fs}px "Be Vietnam Pro", Arial, sans-serif`; ctx.textBaseline = 'middle';
-      let text = `${label} · ${fmtDT(file.lastModified && Date.now() - file.lastModified < 6e5 ? Date.now() : (file.lastModified || Date.now()))}`;
-      while (ctx.measureText(text).width > w - fs && text.length > 10) text = text.slice(0, -2);
-      ctx.fillText(text, Math.round(fs * 0.5), h - bh / 2);
-      const data = cv.toDataURL('image/jpeg', 0.72);
-      const thumb = thumbOf(cv, w, h);
-      cv.width = cv.height = 0; // giải phóng bộ nhớ canvas ngay
-      return { data, thumb };
-    } finally { URL.revokeObjectURL(url); }
+      geo.watch = navigator.geolocation.watchPosition((p) => {
+        geo.fix = { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0), ts: Date.now() };
+        geo.state = 'ok'; camGeoChip();
+      }, (e) => { geo.state = e.code === 1 ? 'denied' : (geo.fix ? 'ok' : 'wait'); camGeoChip(); },
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+    } catch (e) { geo.watch = null; }
+  }
+  function geoStop() { if (geo.watch !== null) { try { navigator.geolocation.clearWatch(geo.watch); } catch (e) { /* ignore */ } geo.watch = null; } }
+  const freshFix = () => (geo.fix && Date.now() - geo.fix.ts < 180000 ? geo.fix : null);
+
+  // Đọc tọa độ GPS trong EXIF của ảnh JPEG chọn từ thư viện (nếu điện thoại còn giữ).
+  async function exifGps(file) {
+    try {
+      if (!/jpe?g/i.test(file.type || '') && !/\.jpe?g$/i.test(file.name || '')) return null;
+      const v = new DataView(await file.slice(0, 256 * 1024).arrayBuffer());
+      if (v.getUint16(0) !== 0xFFD8) return null;
+      let o = 2;
+      while (o + 10 < v.byteLength) {
+        const mk = v.getUint16(o), len = v.getUint16(o + 2);
+        if ((mk & 0xFF00) !== 0xFF00) break;
+        if (mk === 0xFFE1 && v.getUint32(o + 4) === 0x45786966) return parseExifGps(v, o + 10);
+        o += 2 + len;
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+  function parseExifGps(v, t) {
+    const le = v.getUint16(t) === 0x4949;
+    const u16 = (p) => v.getUint16(t + p, le), u32 = (p) => v.getUint32(t + p, le);
+    const ifd0 = u32(4), n = u16(ifd0); let gps = 0;
+    for (let i = 0; i < n; i++) { const e = ifd0 + 2 + i * 12; if (u16(e) === 0x8825) gps = u32(e + 8); }
+    if (!gps) return null;
+    const m = u16(gps), tags = {};
+    for (let i = 0; i < m; i++) {
+      const e = gps + 2 + i * 12, tag = u16(e), type = u16(e + 2), cnt = u32(e + 4);
+      if (type === 2) tags[tag] = String.fromCharCode(v.getUint8(t + e + 8));
+      else if (type === 5 && cnt === 3) { const off = u32(e + 8); tags[tag] = [0, 1, 2].map((k) => u32(off + k * 8) / (u32(off + k * 8 + 4) || 1)); }
+    }
+    if (!tags[2] || !tags[4]) return null;
+    const dms = (a) => a[0] + a[1] / 60 + a[2] / 3600;
+    let lat = dms(tags[2]), lng = dms(tags[4]);
+    if (tags[1] === 'S') lat = -lat;
+    if (tags[3] === 'W') lng = -lng;
+    if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) return null;
+    return { lat, lng, acc: 0 };
+  }
+
+  // Bản đồ nhỏ (OpenStreetMap) quanh vị trí chụp; không có mạng thì trả về null.
+  const tileCache = new Map(), insetCache = new Map();
+  let tileFailAt = 0; // mất mạng: bỏ qua bản đồ 60 giây để ảnh được lưu ngay
+  function loadTile(k) {
+    if (!tileCache.has(k)) {
+      tileCache.set(k, new Promise((res, rej) => {
+        const img = new Image(); img.crossOrigin = 'anonymous';
+        const to = setTimeout(() => { tileCache.delete(k); rej(new Error('timeout')); }, 3500);
+        img.onload = () => { clearTimeout(to); res(img); };
+        img.onerror = () => { clearTimeout(to); tileCache.delete(k); rej(new Error('tile')); };
+        img.src = `https://tile.openstreetmap.org/${k}.png`;
+      }));
+    }
+    return tileCache.get(k);
+  }
+  async function mapInset(lat, lng) {
+    if (ARTIFACT || navigator.onLine === false || Date.now() - tileFailAt < 60000) return null;
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (insetCache.has(key)) return insetCache.get(key);
+    const z = 17, S = 256, n = 2 ** z, lr = lat * Math.PI / 180;
+    const px = (lng + 180) / 360 * n * 256, py = (1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2 * n * 256;
+    const x0 = px - S / 2, y0 = py - S / 2;
+    const cv = document.createElement('canvas'); cv.width = S; cv.height = S;
+    const ctx = cv.getContext('2d');
+    try {
+      const jobs = [];
+      for (let tx = Math.floor(x0 / 256); tx <= Math.floor((x0 + S) / 256); tx++) {
+        for (let ty = Math.floor(y0 / 256); ty <= Math.floor((y0 + S) / 256); ty++) {
+          jobs.push(loadTile(`${z}/${tx}/${ty}`).then((img) => ctx.drawImage(img, tx * 256 - x0, ty * 256 - y0)));
+        }
+      }
+      await Promise.all(jobs);
+      cv.toDataURL('image/png'); // kiểm tra canvas không bị "taint"
+    } catch (e) { tileFailAt = Date.now(); return null; }
+    if (insetCache.size > 30) insetCache.clear();
+    insetCache.set(key, cv);
+    return cv;
+  }
+  function rr(ctx, x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+  }
+  // Dấu trên ảnh: bản đồ mờ + ghim vị trí ở góc dưới trái, mã hạng mục, tọa độ (không ghi giờ).
+  function drawStamp(ctx, w, h, label, loc, inset) {
+    const m = Math.min(w, h), pad = Math.round(m * 0.022), fs = Math.max(13, Math.round(m * 0.028)), lh = Math.round(fs * 1.38);
+    const font = (b) => `${b ? 700 : 500} ${fs}px "Be Vietnam Pro", Arial, sans-serif`;
+    const lines = [label];
+    if (loc) lines.push(`${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}${loc.acc ? `  ±${loc.acc} m` : ''}`);
+    if (loc && cur && cur.info.address) lines.push(cur.info.address);
+    const ms = loc ? Math.round(m * 0.24) : 0;
+    const maxText = w - pad * 4 - (ms ? ms + pad : 0);
+    ctx.save();
+    const fit = (txt, b) => { ctx.font = font(b); let s = txt; while (ctx.measureText(s).width > maxText && s.length > 4) s = s.slice(0, -2); return s === txt ? s : s.trim() + '…'; };
+    const shown = lines.map((l, i) => fit(l, i === 0));
+    const textW = Math.max(...shown.map((l, i) => { ctx.font = font(i === 0); return ctx.measureText(l).width; }));
+    const boxH = Math.max(ms, shown.length * lh) + pad, boxW = (ms ? ms + pad : 0) + textW + pad * 1.5;
+    const bx = pad, by = h - pad - boxH;
+    ctx.fillStyle = 'rgba(12, 8, 50, .48)'; rr(ctx, bx, by, boxW, boxH, pad * 0.6); ctx.fill();
+    if (ms) {
+      const mx = bx + pad / 2, my = by + pad / 2, cx = mx + ms / 2, cy = my + ms / 2;
+      ctx.save(); rr(ctx, mx, my, ms, ms, pad * 0.45); ctx.clip();
+      if (inset) { ctx.globalAlpha = 0.78; ctx.drawImage(inset, mx, my, ms, ms); ctx.globalAlpha = 1; }
+      else {
+        ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fillRect(mx, my, ms, ms);
+        ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1;
+        for (let k = 1; k < 4; k++) { const d = ms * k / 4; ctx.beginPath(); ctx.moveTo(mx + d, my); ctx.lineTo(mx + d, my + ms); ctx.moveTo(mx, my + d); ctx.lineTo(mx + ms, my + d); ctx.stroke(); }
+      }
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = Math.max(1, m * 0.0025); rr(ctx, mx, my, ms, ms, pad * 0.45); ctx.stroke();
+      const r = ms * 0.075; // ghim
+      ctx.fillStyle = '#e53935'; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, r * 0.22);
+      ctx.beginPath(); ctx.arc(cx, cy - r * 1.35, r, Math.PI * 0.85, Math.PI * 2.15); ctx.lineTo(cx, cy); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy - r * 1.35, r * 0.38, 0, Math.PI * 2); ctx.fill();
+      if (inset) { ctx.font = `500 ${Math.max(8, Math.round(fs * 0.42))}px Arial, sans-serif`; ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('© OpenStreetMap', mx + ms - 3, my + ms - 2); ctx.textAlign = 'left'; }
+    }
+    const tx = bx + pad * 0.75 + (ms ? ms + pad / 2 : 0);
+    const ty0 = by + pad / 2 + (Math.max(ms, shown.length * lh) - shown.length * lh) / 2;
+    ctx.textBaseline = 'middle';
+    shown.forEach((l, i) => { ctx.font = font(i === 0); ctx.fillStyle = i === 0 ? '#ffffff' : 'rgba(255,255,255,.88)'; ctx.fillText(l, tx, ty0 + lh * i + lh / 2); });
+    ctx.restore();
+  }
+  async function makePhoto(src, sw, sh, label, loc) {
+    const sc = Math.min(1, 1600 / Math.max(sw, sh)), w = Math.round(sw * sc), h = Math.round(sh * sc);
+    const useLoc = geoOn() ? loc : null;
+    const inset = useLoc ? await mapInset(useLoc.lat, useLoc.lng) : null;
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d'); ctx.drawImage(src, 0, 0, w, h);
+    drawStamp(ctx, w, h, label, useLoc, inset);
+    const data = cv.toDataURL('image/jpeg', 0.72);
+    const thumb = thumbOf(cv, w, h);
+    cv.width = cv.height = 0; // giải phóng bộ nhớ canvas ngay
+    return { data, thumb, geo: useLoc ? { lat: useLoc.lat, lng: useLoc.lng, acc: useLoc.acc } : null };
+  }
+  const photoLabel = (c) => `${c} · ${cur.info.project || ''}`.slice(0, 70);
+  async function savePhoto(c, made) {
+    const id = uid();
+    await store.put('photos', { id, insp: cur.id, code: c, data: made.data, thumb: made.thumb, geo: made.geo, ts: Date.now() });
+    photoCache.set(id, made.data); thumbCache.set(id, made.thumb);
+    const r = R(c); r.ph = r.ph || []; r.ph.push(id); touch();
+    return id;
+  }
+  // kind: 'cam' = vừa chụp bằng camera máy (dùng vị trí hiện tại), 'lib' = chọn từ thư viện (chỉ dùng GPS trong ảnh)
+  async function addPhotos(c, files, kind) {
+    if (!files || !files.length) return;
+    toast(`Đang xử lý ${files.length} ảnh…`, 6000);
+    let n = 0;
+    for (const file of files) {
+      const url = URL.createObjectURL(file);
+      try {
+        const loc = (await exifGps(file)) || (kind === 'cam' ? freshFix() : null);
+        const img = await loadImage(url);
+        await savePhoto(c, await makePhoto(img, img.naturalWidth, img.naturalHeight, photoLabel(c), loc));
+        img.src = PH_BLANK; n++;
+      } catch (e) { /* skip */ } finally { URL.revokeObjectURL(url); }
+    }
+    openSet.add(c); refreshItem(c);
+    toast(n ? `Đã thêm ${n} ảnh` : 'Không đọc được ảnh');
   }
   function thumbOf(src, w, h) {
     const sc = Math.min(1, 400 / Math.max(w, h));
@@ -791,23 +958,107 @@
       await new Promise((r) => setTimeout(r, 30));
     }
   }
-  async function addPhotos(c, files) {
-    if (!files || !files.length) return;
-    toast(`Đang xử lý ${files.length} ảnh…`, 6000);
-    const r = R(c); r.ph = r.ph || [];
-    const label = `${c} · ${cur.info.project || ''}`.slice(0, 60);
-    let n = 0;
-    for (const file of files) {
-      try {
-        const { data, thumb } = await processPhoto(file, label);
-        const id = uid();
-        await store.put('photos', { id, insp: cur.id, code: c, data, thumb, ts: Date.now() });
-        photoCache.set(id, data); thumbCache.set(id, thumb); r.ph.push(id); n++;
-      } catch (e) { /* skip */ }
-    }
-    openSet.add(c); touch(); refreshItem(c);
-    toast(n ? `Đã thêm ${n} ảnh` : 'Không đọc được ảnh');
+
+  /* ----- camera trong ứng dụng: chụp liên tục, chuyển hạng mục, chấm kết quả ngay trên camera ----- */
+  const cam = { stream: null, items: [], idx: 0, queue: Promise.resolve(), pending: 0, torch: false };
+  const camSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && !ARTIFACT;
+  function openCamera(c) {
+    if (!camSupported()) { const f = document.getElementById('capin-' + c); if (f) f.click(); return; }
+    cam.items = S.view === 'sec' ? secItems(secById(S.sec)) : allItems();
+    cam.idx = Math.max(0, cam.items.findIndex((x) => x.c === c));
+    $modal.innerHTML = `<div class="cam" id="cam" role="dialog" aria-label="Camera">
+      <video id="cam-video" playsinline muted autoplay></video>
+      <div class="cam-flash" id="cam-flash"></div>
+      <div class="cam-top">
+        <button class="cam-ic" data-act="cam-close" aria-label="Đóng camera">${I.x}</button>
+        <div class="cam-item" id="cam-item"></div>
+        <span class="cam-geo" id="cam-geo"></span>
+      </div>
+      <div class="cam-msg" id="cam-msg" hidden></div>
+      <div class="cam-bottom">
+        <div class="cam-seg" id="cam-seg"></div>
+        <div class="cam-strip" id="cam-strip"></div>
+        <div class="cam-ctl">
+          <button class="cam-nav" data-act="cam-prev" aria-label="Hạng mục trước">${I.back}<span>Mục trước</span></button>
+          <button class="cam-shutter" data-act="cam-shot" aria-label="Chụp ảnh"><i></i></button>
+          <button class="cam-nav" data-act="cam-next" aria-label="Hạng mục sau"><span>Mục sau</span>${I.chev}</button>
+        </div>
+        <div class="cam-ctl2">
+          <button class="cam-ic" id="cam-torch" data-act="cam-torch" aria-label="Đèn" hidden>${I.sun}</button>
+          <button class="btn sun" data-act="cam-close">Xong</button>
+        </div>
+      </div></div>`;
+    camRender(); camGeoChip(); geoStart(); camStart();
   }
+  async function camStart() {
+    const msg = document.getElementById('cam-msg');
+    try {
+      cam.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } } });
+      const v = document.getElementById('cam-video');
+      if (!v) { camStopStream(); return; }
+      v.srcObject = cam.stream; await v.play().catch(() => {});
+      const tr = cam.stream.getVideoTracks()[0];
+      const caps = tr && tr.getCapabilities ? tr.getCapabilities() : {};
+      const tb = document.getElementById('cam-torch'); if (tb) tb.hidden = !caps.torch;
+      if (msg) msg.hidden = true;
+    } catch (e) {
+      if (msg) {
+        msg.hidden = false;
+        msg.innerHTML = `<p>Không mở được camera. Hãy cho phép ứng dụng dùng camera trong cài đặt trình duyệt.</p>
+          <label class="btn sun">${I.cam} Dùng camera của máy<input type="file" accept="image/*" capture="environment" data-photo="${cam.items[cam.idx].c}" data-src="cam" hidden></label>`;
+      }
+    }
+  }
+  function camStopStream() { if (cam.stream) { cam.stream.getTracks().forEach((t) => t.stop()); cam.stream = null; } cam.torch = false; }
+  function closeCamera() {
+    camStopStream();
+    const it = cam.items[cam.idx];
+    $modal.innerHTML = '';
+    if (it && S.view === 'sec') { if ((cur.res[it.c] || {}).ph) openSet.add(it.c); S.focus = 'it-' + it.c; }
+    render(false);
+  }
+  function camGeoChip() {
+    const el = document.getElementById('cam-geo'); if (!el) return;
+    const f = freshFix();
+    el.className = 'cam-geo ' + (f ? 'ok' : geo.state === 'denied' ? 'off' : 'wait');
+    el.textContent = !geoOn() ? 'Vị trí: tắt' : f ? `GPS ±${f.acc} m` : geo.state === 'denied' ? 'Chưa cho phép vị trí' : 'Đang lấy vị trí…';
+  }
+  function camRender() {
+    const it = cam.items[cam.idx]; if (!it) return;
+    const r = cur.res[it.c] || {};
+    const head = document.getElementById('cam-item');
+    if (head) head.innerHTML = `<b>${esc(it.c)}</b><span class="cam-pos">${cam.idx + 1}/${cam.items.length}</span><p>${esc(it.t)}</p>`;
+    const seg = document.getElementById('cam-seg');
+    if (seg) seg.innerHTML = ['ok', 'nok', 'na'].map((k) => `<button class="s-${k} ${r.s === k ? 'on' : ''}" data-act="cam-st" data-v="${k}">${ST[k]}</button>`).join('');
+    camStrip();
+  }
+  function camStrip() {
+    const it = cam.items[cam.idx]; const el = document.getElementById('cam-strip'); if (!it || !el) return;
+    const ids = (cur.res[it.c] || {}).ph || [];
+    el.innerHTML = `<span class="cam-count">${ids.length} ảnh${cam.pending ? ` · đang lưu ${cam.pending}` : ''}</span>` +
+      ids.slice(-5).map((id) => `<img src="${thumbCache.get(id) || PH_BLANK}" alt="">`).join('');
+  }
+  function camShot() {
+    const v = document.getElementById('cam-video');
+    if (!v || !v.videoWidth || !cam.stream) return;
+    const it = cam.items[cam.idx]; const c = it.c;
+    const fc = document.createElement('canvas'); fc.width = v.videoWidth; fc.height = v.videoHeight;
+    fc.getContext('2d').drawImage(v, 0, 0);
+    const fl = document.getElementById('cam-flash'); if (fl) { fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go'); }
+    try { if (navigator.vibrate) navigator.vibrate(25); } catch (e) { /* ignore */ }
+    const loc = freshFix(); const label = photoLabel(c);
+    cam.pending++; camStrip();
+    cam.queue = cam.queue.then(async () => {
+      try { await savePhoto(c, await makePhoto(fc, fc.width, fc.height, label, loc)); }
+      catch (e) { toast('Không lưu được ảnh – bộ nhớ có thể đã đầy'); }
+      finally { fc.width = fc.height = 0; cam.pending--; if (cam.items[cam.idx] && cam.items[cam.idx].c === c) camStrip(); }
+    });
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !document.getElementById('cam')) return;
+    const tr = cam.stream && cam.stream.getVideoTracks()[0];
+    if (!tr || tr.readyState === 'ended') { camStopStream(); camStart(); }
+  });
   function viewPhoto(c, id) {
     const it = findItem(c);
     $modal.innerHTML = `<div class="viewer" role="dialog" aria-label="Ảnh">
@@ -818,7 +1069,7 @@
 
   /* ---------------- modals ---------------- */
   function openModal(inner) { $modal.innerHTML = `<div class="modal-bg" data-act="bg"><div class="modal" role="dialog" aria-modal="true">${inner}</div></div>`; }
-  function closeModal() { $modal.innerHTML = ''; }
+  function closeModal() { if (document.getElementById('cam')) { closeCamera(); return; } $modal.innerHTML = ''; }
   let askResolve = null;
   function ask(title, msg, okLabel = 'Đồng ý', danger = false) {
     openModal(`<h2>${esc(title)}</h2><p style="margin:0">${esc(msg)}</p><div class="modal-actions"><button class="btn" data-act="ask-no">Hủy</button><button class="btn ${danger ? 'danger' : 'primary'}" data-act="ask-yes">${esc(okLabel)}</button></div>`);
@@ -830,6 +1081,9 @@
     openModal(`<h2>Cài đặt</h2>
       <div class="field"><label for="s-insp">Người kiểm tra mặc định</label><input class="inp" id="s-insp" value="${esc(settings.inspector)}"></div>
       <div class="field"><label for="s-om">Đơn vị O&M mặc định</label><input class="inp" id="s-om" value="${esc(settings.om)}"></div>
+      <div class="field"><label for="s-geo">Vị trí trên ảnh</label><select class="inp" id="s-geo">
+        <option value="on" ${geoOn() ? 'selected' : ''}>Gắn tọa độ GPS và bản đồ nhỏ vào góc ảnh</option>
+        <option value="off" ${geoOn() ? '' : 'selected'}>Không gắn vị trí</option></select></div>
       <div class="field"><label for="s-theme">Giao diện</label><select class="inp" id="s-theme">
         ${[['system', 'Theo hệ thống'], ['light', 'Sáng – dễ đọc ngoài nắng'], ['dark', 'Tối']].map(([k, l]) => `<option value="${k}" ${settings.theme === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <p class="muted small" style="margin:0">Bộ checklist ${esc(CL.version)}. Cài lên màn hình chính: Safari → Chia sẻ → "Thêm vào MH chính"; Chrome → ⋮ → "Cài đặt ứng dụng".</p>
@@ -905,8 +1159,26 @@
         settings.inspector = document.getElementById('s-insp').value.trim();
         settings.om = document.getElementById('s-om').value.trim();
         settings.theme = document.getElementById('s-theme').value;
+        settings.geoStamp = document.getElementById('s-geo').value === 'on';
         lsSet('pvho-settings', settings); applyTheme(); closeModal(); toast('Đã lưu cài đặt'); break;
       case 'close': closeModal(); break;
+      case 'cam-open': openCamera(c); break;
+      case 'cam-close': closeCamera(); break;
+      case 'cam-shot': camShot(); break;
+      case 'cam-prev': case 'cam-next': {
+        const n = cam.items.length; if (!n) break;
+        cam.idx = (cam.idx + (act === 'cam-next' ? 1 : -1) + n) % n; camRender(); break;
+      }
+      case 'cam-st': {
+        const it = cam.items[cam.idx]; const r = R(it.c);
+        r.s = r.s === v ? undefined : v; if (r.s === 'nok' && !r.sev) r.sev = 'B';
+        touch(); camRender(); break;
+      }
+      case 'cam-torch': {
+        const tr = cam.stream && cam.stream.getVideoTracks()[0]; if (!tr) break;
+        cam.torch = !cam.torch; tr.applyConstraints({ advanced: [{ torch: cam.torch }] }).catch(() => { cam.torch = false; });
+        b.classList.toggle('on', cam.torch); break;
+      }
       case 'ask-yes': settleAsk(true); break;
       case 'ask-no': settleAsk(false); break;
       case 'tab': flush(); go('insp', { tab: v }); break;
@@ -1006,7 +1278,7 @@
   });
   document.addEventListener('change', (e) => {
     const t = e.target;
-    if (t.dataset.photo) { addPhotos(t.dataset.photo, [...t.files]); t.value = ''; }
+    if (t.dataset.photo) { const fs = [...t.files]; t.value = ''; if (document.getElementById('cam')) closeCamera(); addPhotos(t.dataset.photo, fs, t.dataset.src); }
     else if (t.hasAttribute('data-import')) { if (t.files[0]) importJSON(t.files[0]); t.value = ''; }
     else if (t.hasAttribute('data-verdict')) { cur.verdict.v = t.value; touch(); render(false); }
     else if (t.dataset.info === 'type' || t.dataset.info === 'purpose') { cur.info[t.dataset.info] = t.value; if (S.view !== 'info') { touch(); } }
@@ -1035,6 +1307,8 @@
 .rpt .code{font-family:var(--f-mono);white-space:nowrap;font-size:11.5px}
 .rpt .r-ok{color:#17803f;font-weight:700}.rpt .r-nok{color:#c3281f;font-weight:700}.rpt .r-na{color:#66748a}.rpt .r-none{color:#a06a00}
 .rpt .info td:nth-child(odd){width:20%;background:#f6f6fb;font-weight:600}
+.rpt tr.part td{background:#190d82;color:#fff;font-weight:700;letter-spacing:.03em}
+.rpt tr.grp td{background:#fbf7e6;color:#5a4500;font-weight:600;font-size:11.5px;padding:3px 7px}
 .rpt .sev{display:inline-block;padding:0 7px;border-radius:4px;color:#fff;font-weight:700;font-family:var(--f-mono)}
 .rpt .sev.A{background:#c3281f}.rpt .sev.B{background:#c26a00}.rpt .sev.C{background:#1f5fc2}
 .rpt .verdict-p{border:2px solid #190d82;padding:10px 12px;margin-top:6px;font-size:14px}

@@ -12,7 +12,13 @@
   Mỗi hạng mục có tiêu chí đánh giá (nút **i**).
 - Hạng mục tự lọc theo **loại dự án** (áp mái / mặt đất / nổi). Thêm được hạng mục riêng cho từng nhóm.
 - Mỗi hạng mục: **Đạt / Không đạt / N/A**, ô **giá trị đo** (V, A, MΩ, Ω, °C, kWh, %), ghi chú, ảnh.
-- **Chụp ảnh hiện trường**: ảnh được nén (~200–400 KB) và **đóng dấu mã hạng mục + tên dự án + thời gian**.
+- **Cấu trúc khoa học**: 11 phần A–K theo dòng năng lượng (hồ sơ → tiếp cận mái → dàn pin → DC → inverter → AC & lưới
+  → tiếp địa → giám sát → phụ trợ → PCCC → mặt bằng); trong mỗi nhóm chia nhóm con theo trình tự bố trí → liên kết →
+  vật liệu → đấu nối → vận hành → nhãn, biển báo → đo kiểm.
+- **Camera trong ứng dụng**: chụp liên tục nhiều ảnh, chuyển *Mục trước / Mục sau* và chấm Đạt / Không đạt / N/A ngay
+  trên màn hình camera; có đèn (Android). Nút camera nhanh ở góc mỗi hạng mục.
+- **Ảnh có vị trí**: góc ảnh có bản đồ nhỏ (OpenStreetMap) làm mờ với ghim vị trí, mã hạng mục, tọa độ GPS ±m và địa chỉ
+  dự án; không ghi giờ. Mất mạng thì vẫn có tọa độ, bản đồ thay bằng khung lưới. Tắt được trong Cài đặt.
 - **Danh sách tồn tại (punch list)** phân mức **A** (nghiêm trọng – xử lý trước bàn giao), **B** (quan trọng – xử lý
   theo thời hạn), **C** (khuyến nghị), kèm người chịu trách nhiệm và hạn khắc phục.
 - **Kết luận tự động** (đủ điều kiện / có điều kiện / chưa đủ điều kiện nhận bàn giao), có thể chỉnh tay.
