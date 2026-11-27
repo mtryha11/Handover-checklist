@@ -1360,6 +1360,8 @@
       let L = insp.lark;
       if (!L || L.v !== 2) L = insp.lark = { v: 2, rec: (L && L.rec) || '', pdf: (L && L.pdf) || '', xlsx: (L && L.xlsx) || '', items: {} };
       const f = insp.info, all = allItems(), n = count(all);
+      // Chụp lại danh sách nhóm ngay từ đầu: người dùng có thể rời biên bản khi đang đồng bộ.
+      const secMap = new Map(SECS().map((sc) => [sc.id, sc]));
       // 1) Ảnh: tải lên từng ảnh mới (của mọi hạng mục)
       const queue = [];
       for (const it of all) {
@@ -1390,7 +1392,7 @@
       const groups = isPM(insp) ? PM.kinds.map((K) => ({ label: `BT. ${K.title}`, has: (sec) => sec.kind === K.k })) : CL.parts.map((p) => ({ label: `${p.id}. ${p.title}`, has: (sec) => sec.part === p.id }));
       if (isPM(insp)) { sum['Đợt bảo trì'] = periodLabel(f); types['Đợt bảo trì'] = 'text'; }
       for (const p of groups) {
-        const its = all.filter((it) => p.has(secById(it.secId))); if (!its.length) continue;
+        const its = all.filter((it) => p.has(secMap.get(it.secId) || {})); if (!its.length) continue;
         const c = count(its), label = p.label;
         const kp = `% hoàn thành – ${label}`, kn = `Không đạt – ${label}`, ka = `Ảnh – ${label}`;
         sum[kp] = c.pct; sum[kn] = c.nok;
@@ -1407,12 +1409,12 @@
       for (const it of all) {
         const r = insp.res[it.c] || {}; const li = L.items[it.c];
         if (r.s !== 'nok') { if (li.rec) { gone.push(li.rec); li.rec = ''; li.h = ''; } continue; }
-        const sec = secById(it.secId); const toks = toksOf(it);
+        const sec = secMap.get(it.secId) || { part: '', partTitle: '', title: '', id: '' }; const toks = toksOf(it);
         const g = (r.ph || []).map((id) => photoGeo.get(id)).find(Boolean);
         const data = {
           'Dự án': f.project, 'Phần': `${sec.part}. ${sec.partTitle}`, 'Nhóm': sec.title + (isPM(insp) ? ` (${sec.id})` : ''), 'Nhóm con': it.g || '', 'Mã hạng mục': it.c,
           'Nội dung kiểm tra': it.t, 'Kết quả': ST.nok, 'Mức độ': r.sev || 'B',
-          'Ghi chú / mô tả tồn tại': r.note || '', 'Giá trị đo': r.val || '', 'Đơn vị': it.u || '', 'Trách nhiệm': r.resp || '',
+          'Ghi chú / mô tả tồn tại': noteOf(it, r), 'Giá trị đo': r.val || '', 'Đơn vị': it.u || '', 'Trách nhiệm': r.resp || '',
           'Hạn khắc phục': r.due || '', 'Ảnh': toks, 'Số ảnh': toks.length, 'Vị trí GPS': g ? `${g.lat.toFixed(6)}, ${g.lng.toFixed(6)}` : ''
         };
         const h = hashOf(JSON.stringify(data) + L.rec);
