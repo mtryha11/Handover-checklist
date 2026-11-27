@@ -26,12 +26,18 @@ const CFG = {
   accounts: (process.env.LARK_ACCOUNTS_URL || 'https://accounts.larksuite.com').replace(/\/$/, ''),
   appId: process.env.LARK_APP_ID || '',
   appSecret: process.env.LARK_APP_SECRET || '',
-  base: process.env.LARK_BASE_TOKEN || '',
+  base: baseToken(process.env.LARK_BASE_TOKEN || ''),
   publicUrl: (process.env.PUBLIC_URL || '').replace(/\/$/, ''),
   origins: (process.env.ALLOWED_ORIGINS || 'https://mtryha11.github.io').split(',').map((s) => s.trim()).filter(Boolean),
   sessionSecret: process.env.SESSION_SECRET || '',
   sessionDays: +(process.env.SESSION_DAYS || 30)
 };
+// Chấp nhận cả token lẫn nguyên đường dẫn Base (…/base/<token>?table=…&view=…): chỉ lấy phần token.
+function baseToken(raw) {
+  const v = String(raw).trim();
+  const m = v.match(/\/base\/([A-Za-z0-9]+)/);
+  return m ? m[1] : v.split(/[?&#/\s]/)[0];
+}
 function loadDotEnv(file) {
   if (!fs.existsSync(file)) return;
   for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
@@ -260,7 +266,13 @@ function readBody(req, limit = 40 * 1024 * 1024) {
 }
 
 const routes = {
-  'GET /health': async () => ({ ok: true, configured: !!(CFG.appId && CFG.appSecret && CFG.base && CFG.sessionSecret && CFG.publicUrl), tables: tables || null }),
+  'GET /': async () => ({ service: 'Raitek PV Handover – cầu nối Lark Base', ok: true, health: '/health', hint: 'Mở ứng dụng từ Lark Workplace để đăng nhập và đồng bộ' }),
+  'GET /health': async () => {
+    const configured = !!(CFG.appId && CFG.appSecret && CFG.base && CFG.sessionSecret && CFG.publicUrl);
+    let error = null;
+    if (configured && !tables) { try { await ensureTables(); } catch (e) { error = e.message; } } // thử kết nối lại, báo lỗi cụ thể
+    return { ok: true, configured, tables: tables || null, error, base: CFG.base ? CFG.base.slice(0, 4) + '…' + CFG.base.slice(-3) : '' };
+  },
 
   'GET /auth/login': async ({ url, res }) => {
     const ret = url.searchParams.get('return') || '';
