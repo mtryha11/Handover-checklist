@@ -226,8 +226,31 @@
   const evMissing = (it) => {
     if (!isPM()) return '';
     const r = cur.res[it.c] || {}; if (r.s !== 'ok') return '';
-    return [it.p && !(r.ph && r.ph.length) ? 'ảnh' : '', it.u && !String(r.val || '').trim() ? 'giá trị đo' : ''].filter(Boolean).join(' và ');
+    const nph = (r.ph || []).length; const out = [];
+    if (it.p && nph < it.p) out.push(`cần ${it.p} ảnh, mới có ${nph}`);
+    if (it.ms) { const k = it.ms.filter((l) => !String((r.mv || {})[l] || '').trim()).length; if (k) out.push(`còn ${k} string chưa có số đo`); }
+    else if (it.u && !String(r.val || '').trim()) out.push('chưa ghi giá trị đo');
+    return out.join('; ');
   };
+  // Đo từng string: số đo lưu ở r.mv {nhãn: giá trị}; r.val là dòng tóm tắt dùng cho biên bản.
+  const num = (v) => { const x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : null; };
+  function mvStats(it, r) {
+    const mv = r.mv || {}; const vals = it.ms.map((l) => num(mv[l]));
+    const got = vals.filter((v) => v !== null); const sorted = got.slice().sort((a, b) => a - b);
+    const med = sorted.length ? (sorted[(sorted.length - 1) >> 1] + sorted[sorted.length >> 1]) / 2 : 0;
+    // Lệch quá 10 % so với trung vị, hoặc bằng 0, là string cần kiểm tra.
+    const dev = it.ms.filter((l, i) => vals[i] !== null && (vals[i] === 0 || (med > 0 && Math.abs(vals[i] - med) / med > 0.1)));
+    const f = (x) => String(Math.round(x * 100) / 100).replace('.', ',');
+    return { n: got.length, total: it.ms.length, dev, summary: got.length ? `${got.length}/${it.ms.length} string · ${f(sorted[0])}–${f(sorted[sorted.length - 1])}` : '' };
+  }
+  function mvUpdate(c) {
+    const it = findItem(c); const el = document.getElementById('it-' + c); if (!it || !it.ms || !el) return;
+    const r = R(c); const st = mvStats(it, r); r.val = st.summary;
+    el.querySelectorAll('[data-mf]').forEach((inp) => inp.classList.toggle('dev', st.dev.includes(inp.dataset.mf)));
+    const sm = document.getElementById('mvs-' + c); if (sm) sm.innerHTML = mvLine(st);
+  }
+  const mvLine = (st) => `${st.n}/${st.total} string đã đo${st.dev.length ? ` · <b class="dev">Lệch quá 10 %: ${st.dev.map(esc).join(', ')}</b>` : st.n === st.total ? ' · các string đồng đều' : ''}`;
+  const noteOf = (it, r) => [r.note || '', it.ms && r.mv ? it.ms.map((l) => `${l}: ${String(r.mv[l] || '').trim() || '–'}`).join(' · ') : ''].filter(Boolean).join('\n');
   const R = (c) => cur.res[c] || (cur.res[c] = {});
   function count(items) {
     const n = { ok: 0, nok: 0, na: 0, none: 0, total: items.length, A: 0, B: 0, C: 0 };
@@ -282,7 +305,7 @@
     const st = cur.site; const saved = sitesAll();
     const tally = PM.kinds.map((K) => { const n = st.assets.filter((a) => a.k === K.k).length; return n && !['pre', 'end'].includes(K.k) ? `<span class="chip">${n} ${esc(K.one.toLowerCase())}</span>` : ''; }).join('');
     const rows = st.zones.map((z, zi) => `<div class="part-head"><span class="part-id">${zi + 1}</span><span class="grow">${esc(z)}</span>${zi ? `<button class="icon-btn sm" data-act="zone-up" data-v="${zi}" aria-label="Đưa khu vực lên trước">${I.up}</button>` : ''}</div>` +
-      st.assets.filter((a) => a.z === z).map((a) => `<button class="asset-row" data-act="site-edit" data-id="${esc(a.id)}"><span class="asset-id">${esc(a.id)}</span><span style="min-width:0"><b>${esc(a.n)}</b>${a.d ? `<span class="sub">${esc(a.d)}</span>` : ''}</span>${I.pen}</button>`).join('')).join('');
+      st.assets.filter((a) => a.z === z).map((a) => `<button class="asset-row" data-act="site-edit" data-id="${esc(a.id)}"><span class="asset-id">${esc(a.id)}</span><span style="min-width:0"><b>${esc(a.n)}</b>${a.d ? `<span class="sub">${esc(a.d)}</span>` : ''}${a.str.length ? `<span class="sub">${a.str.length} string: ${esc(a.str.join(', '))}</span>` : ''}</span>${I.pen}</button>`).join('')).join('');
     return `<section class="card pad form-section"><h2>Hồ sơ thiết bị dự án</h2>
       <p class="muted small" style="margin:0">Checklist được nhân ra cho từng thiết bị dưới đây, xếp theo khu vực đúng lộ trình đi tại hiện trường. Lập một lần từ bản vẽ hoàn công, các quý sau dùng lại.</p>
       ${isNew && saved.length ? `<div class="field"><label for="site-pick">Dự án đã lưu trên máy</label><select id="site-pick" data-site-pick><option value="">— Chọn để điền sẵn thông tin và thiết bị —</option>${saved.map((x, i) => `<option value="${i}">${esc(x.info.project)}</option>`).join('')}</select></div>` : ''}
@@ -309,7 +332,8 @@
       ${a ? '' : `<div class="field"><label for="as-k">Loại thiết bị</label><select class="inp" id="as-k">${PM.kinds.filter((x) => !['pre', 'end'].includes(x.k)).map((x) => `<option value="${x.k}">${esc(x.title)}</option>`).join('')}</select></div>`}
       <div class="field"><label for="as-n">Tên thiết bị</label><input class="inp" id="as-n" value="${esc(a ? a.n : '')}" placeholder="VD: Inverter 05 – SUN2000-100KTL"></div>
       <div class="field"><label for="as-z">Khu vực (điểm dừng trên lộ trình)</label><input class="inp" id="as-z" list="as-zl" value="${esc(a ? a.z : '')}" placeholder="Để trống = khu vực mặc định của loại thiết bị"><datalist id="as-zl">${cur.site.zones.map((z) => `<option value="${esc(z)}">`).join('')}</datalist></div>
-      <div class="field"><label for="as-d">Mô tả (model, số string, vị trí…)</label><textarea class="inp" id="as-d">${esc(a ? a.d : '')}</textarea></div>
+      <div class="field"><label for="as-d">Mô tả (model, vị trí…)</label><textarea class="inp" id="as-d">${esc(a ? a.d : '')}</textarea></div>
+      ${!a || K.tasks.some((t) => t.multi) ? `<div class="field"><label for="as-s">String của inverter (để đo kẹp dòng từng string)</label><input class="inp" id="as-s" value="${esc(a ? a.str.join(', ') : '')}" placeholder="Nhập số string, VD: 14 – hoặc liệt kê ngõ vào: PV1, PV2, PV13"></div>` : ''}
       ${K && K.opts ? Object.entries(K.opts).map(([k, l]) => `<label class="check"><input type="checkbox" data-opt="${k}" ${a.opt.includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('') : ''}
       <div class="modal-actions" ${a ? 'style="grid-template-columns:1fr 1fr 1fr"' : ''}>${a ? `<button class="btn danger" data-act="site-del" data-id="${esc(a.id)}">Xóa</button>` : ''}<button class="btn" data-act="close">Hủy</button><button class="btn primary" data-act="site-save" data-id="${esc(a ? a.id : '')}">Lưu</button></div>`);
   }
@@ -431,7 +455,7 @@
     <main class="wrap no-tabs">
       <section class="card hero-card">
         <h2>Bảo trì bảo dưỡng định kỳ quý</h2>
-        <p class="muted small" style="margin:0">${PM.countTasks()} đầu việc theo ${PM.kinds.length} loại thiết bị, nhân ra cho từng inverter, tủ điện, khu mái của dự án và xếp theo lộ trình đi. Thiết bị nào chưa làm xong hiện ngay trên danh sách; biên bản tổng hợp theo mẫu checklist quý A–H.</p>
+        <p class="muted small" style="margin:0">${PM.countTasks()} đầu việc theo ${PM.kinds.length} loại thiết bị, nhân ra cho từng inverter, tủ điện, khu mái của dự án và xếp theo lộ trình đi. Mỗi đầu việc có hướng dẫn chụp ảnh và cách làm; thiết bị nào chưa xong hiện ngay trên danh sách.</p>
         <button class="btn sun block" data-act="new-pm">${I.plus} Tạo đợt bảo trì quý</button>
       </section>
       <section class="card hero-card">
@@ -565,7 +589,12 @@
     const c = it.c; const r = cur.res[c] || {}; const st = r.s || '';
     const SEV = sevOf();
     const pv = cur.prev || {}; const pvIt = pv.items && pv.items[c]; const pvVal = pv.vals && pv.vals[c];
-    const tags = [it.f && PM.freq[it.f] ? `<span class="tag">${PM.freq[it.f]}</span>` : '', it.off ? `<span class="tag off">Cắt điện</span>` : '', it.p ? `<span class="tag">Ảnh</span>` : ''].join('');
+    const tags = [it.f && PM.freq[it.f] ? `<span class="tag">${PM.freq[it.f]}</span>` : '', it.off ? `<span class="tag off">Cắt điện</span>` : ''].join('');
+    const nphAll = (r.ph || []).length;
+    const guide = it.ph ? `<p class="ph-guide">${I.cam}<span>${esc(it.ph)}${it.p ? ` <b class="${nphAll >= it.p ? 'ok' : ''}">${nphAll}/${it.p} ảnh</b>` : ''}</span></p>` : '';
+    const mst = it.ms ? mvStats(it, r) : null;
+    const grid = it.ms ? `<div class="mgrid">${it.ms.map((l) => `<label><span>${esc(l)}</span><input class="inp mono ${mst.dev.includes(l) ? 'dev' : ''}" inputmode="decimal" data-mf="${esc(l)}" data-c="${c}" value="${esc((r.mv || {})[l] || '')}" aria-label="Dòng string ${esc(l)}"></label>`).join('')}</div>
+      <p class="mv-sum" id="mvs-${c}">${mvLine(mst)}</p>` : '';
     const miss = evMissing(it);
     const open = st === 'nok' || openSet.has(c);
     const hintOn = hintSet.has(c);
@@ -586,16 +615,18 @@
     const moreLabel = [r.note ? 'có ghi chú' : '', nph ? `${nph} ảnh` : ''].filter(Boolean).join(', ');
     return `<article class="card item ${st ? 'st-' + st : ''}" id="it-${c}">
       <div class="item-head"><div style="min-width:0"><div class="item-code">${c}${it.custom ? ' · bổ sung' : ''}${it.x ? ' · đã bỏ khỏi checklist' : ''}${secName ? ` · <span class="sec-name">${esc(secName)}</span>` : ''}${tags}</div><p class="item-t">${esc(it.t)}</p></div>
-        <div class="item-tools">${it.h ? `<button class="info-btn ${hintOn ? 'on' : ''}" data-act="hint" data-c="${c}" aria-label="Tiêu chí đánh giá" aria-expanded="${hintOn}">i</button>` : ''}<button class="info-btn cam-quick" data-act="cam-open" data-c="${c}" aria-label="Chụp ảnh hạng mục ${c}">${I.cam}${nph ? `<span>${nph}</span>` : ''}</button>
+        <div class="item-tools">${it.h || it.i ? `<button class="info-btn ${hintOn ? 'on' : ''}" data-act="hint" data-c="${c}" aria-label="${it.i ? 'Hướng dẫn thực hiện' : 'Tiêu chí đánh giá'}" ${it.i ? '' : `aria-expanded="${hintOn}"`}>i</button>` : ''}<button class="info-btn cam-quick" data-act="cam-open" data-c="${c}" aria-label="Chụp ảnh hạng mục ${c}">${I.cam}${nph ? `<span>${nph}</span>` : ''}</button>
           <input type="file" accept="image/*" capture="environment" data-photo="${c}" data-src="cam" id="capin-${c}" hidden></div></div>
       ${it.h && hintOn ? `<p class="hint">${esc(it.h)}</p>` : ''}
+      ${guide}
       ${pvIt ? `<p class="prev-box"><b>${esc(pv.label)}: không đạt (${esc(pvIt.sev)})</b>${pvIt.note ? ' – ' + esc(pvIt.note) : ''}. Kiểm tra lại và xác nhận đã xử lý.</p>` : ''}
       <div class="seg" role="group" aria-label="Kết quả">
         <button class="s-ok ${st === 'ok' ? 'on' : ''}" data-act="st" data-v="ok" data-c="${c}" aria-pressed="${st === 'ok'}">${I.check} Đạt</button>
         <button class="s-nok ${st === 'nok' ? 'on' : ''}" data-act="st" data-v="nok" data-c="${c}" aria-pressed="${st === 'nok'}">${I.x} Không đạt</button>
         <button class="s-na ${st === 'na' ? 'on' : ''}" data-act="st" data-v="na" data-c="${c}" aria-pressed="${st === 'na'}">N/A</button>
       </div>
-      ${it.u ? `<div class="meas"><label for="v-${c}">Giá trị đo</label><input class="inp mono" id="v-${c}" data-f="val" data-c="${c}" value="${esc(r.val || '')}" placeholder="${pvVal ? 'Đợt trước: ' + esc(pvVal) : 'VD: 2,1 hoặc 820–835'}"><span class="unit">${esc(it.u)}</span></div>${pvVal ? `<p class="prev-val">${esc(pv.label)}: <b>${esc(pvVal)} ${esc(it.u)}</b></p>` : ''}` : ''}
+      ${grid}${it.mh ? '<p class="mv-sum">Khai báo số string của thiết bị ở tab Thông tin để nhập số đo cho từng string.</p>' : ''}
+      ${it.u && !it.ms ? `<div class="meas"><label for="v-${c}">Giá trị đo</label><input class="inp mono" id="v-${c}" data-f="val" data-c="${c}" value="${esc(r.val || '')}" placeholder="${pvVal ? 'Đợt trước: ' + esc(pvVal) : 'VD: 2,1 hoặc 820–835'}"><span class="unit">${esc(it.u)}</span></div>${pvVal ? `<p class="prev-val">${esc(pv.label)}: <b>${esc(pvVal)} ${esc(it.u)}</b></p>` : ''}` : ''}
       ${miss ? `<p class="ev-miss">Thiếu bằng chứng: ${miss}</p>` : ''}
       ${detail}
       ${!open ? `<button class="more-btn" data-act="more" data-c="${c}">${I.cam} Ghi chú / ảnh${moreLabel ? ` (${moreLabel})` : ''}</button>` : (st !== 'nok' ? `<button class="more-btn" data-act="less" data-c="${c}">Thu gọn</button>` : '')}
@@ -740,7 +771,7 @@
         title: `${s.id} – ${s.title}`, part: s.part, partTitle: s.partTitle,
         rows: its.map((it) => {
           const r = cur.res[it.c] || {};
-          return { g: it.g || '', c: it.c, t: it.t, s: r.s || '', res: r.s ? ST[r.s] : 'Chưa KT', sev: r.s === 'nok' ? (r.sev || 'B') : '', val: r.val ? `${r.val} ${it.u || ''}`.trim() : '', note: r.note || '' };
+          return { g: it.g || '', c: it.c, t: it.t, s: r.s || '', res: r.s ? ST[r.s] : 'Chưa KT', sev: r.s === 'nok' ? (r.sev || 'B') : '', val: r.val ? `${r.val} ${it.u || ''}`.trim() : '', note: noteOf(it, r) };
         })
       })),
       appendix: all.map((it) => ({ it, r: cur.res[it.c] || {} })).filter(({ r }) => r.s !== 'nok' && phs(r).length)
@@ -756,7 +787,7 @@
       const its = all.filter((it) => it.form === ln.k); const c = count(its);
       const bad = its.filter((it) => (cur.res[it.c] || {}).s === 'nok').map((it) => it.c);
       const s = !its.length ? 'na' : c.nok ? 'nok' : c.none ? '' : c.ok ? 'ok' : 'na';
-      const note = !its.length ? 'Dự án không có hạng mục này' : [`${c.ok + c.na}/${c.total} vị trí đạt`, bad.length ? 'Không đạt: ' + bad.join(', ') : '', c.none ? `${c.none} vị trí chưa làm` : ''].filter(Boolean).join(' · ');
+      const note = !its.length ? (ln.remote ? 'Thực hiện từ xa trên hệ thống giám sát, không thuộc checklist hiện trường' : 'Dự án không có hạng mục này') : [`${c.ok + c.na}/${c.total} vị trí đạt`, bad.length ? 'Không đạt: ' + bad.join(', ') : '', c.none ? `${c.none} vị trí chưa làm` : ''].filter(Boolean).join(' · ');
       return { k: ln.k, t: ln.t, m: ln.m, s, res: s ? ST[s] : 'Chưa xong', note };
     })));
   }
@@ -856,7 +887,7 @@
     const rows = allItems().map((it) => {
       const r = cur.res[it.c] || {};
       const sec = secById(it.secId);
-      return [W(`${sec.part}. ${sec.partTitle}`), W(sec.title), W(it.g || ''), W(it.c), W(it.t), W(r.s ? ST[r.s] : 'Chưa KT'), W(r.s === 'nok' ? (r.sev || 'B') : ''), W(r.val || ''), W(it.u || ''), W(r.note || ''), W(r.resp || ''), W(fmtDate(r.due)), W((r.ph || []).length || '')];
+      return [W(`${sec.part}. ${sec.partTitle}`), W(sec.title), W(it.g || ''), W(it.c), W(it.t), W(r.s ? ST[r.s] : 'Chưa KT'), W(r.s === 'nok' ? (r.sev || 'B') : ''), W(r.val || ''), W(it.u || ''), W(noteOf(it, r)), W(r.resp || ''), W(fmtDate(r.due)), W((r.ph || []).length || '')];
     });
     const punch = punchItems().map((it, i) => {
       const r = cur.res[it.c];
@@ -1069,44 +1100,41 @@
     ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
   }
   // Dấu trên ảnh: bản đồ mờ + ghim vị trí ở góc dưới trái, mã hạng mục, tọa độ (không ghi giờ).
+  // Dấu vị trí ở góc ảnh: nhỏ, mờ, không che nội dung chính. Hai dòng chữ và một ô bản đồ nhỏ.
   function drawStamp(ctx, w, h, label, loc, inset) {
-    const m = Math.min(w, h), pad = Math.round(m * 0.022), fs = Math.max(13, Math.round(m * 0.028)), lh = Math.round(fs * 1.38);
-    const font = (b) => `${b ? 700 : 500} ${fs}px "Be Vietnam Pro", Arial, sans-serif`;
+    const m = Math.min(w, h), pad = Math.round(m * 0.012), fs = Math.max(11, Math.round(m * 0.0165)), lh = Math.round(fs * 1.32);
+    const font = (b) => `${b ? 600 : 400} ${fs}px "Be Vietnam Pro", Arial, sans-serif`;
     const lines = [label];
     if (loc) lines.push(`${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}${loc.acc ? `  ±${loc.acc} m` : ''}`);
-    if (loc && cur && cur.info.address) lines.push(cur.info.address);
-    const ms = loc ? Math.round(m * 0.24) : 0;
-    const maxText = w - pad * 4 - (ms ? ms + pad : 0);
+    const ms = loc ? Math.round(m * 0.095) : 0;
+    const maxText = Math.min(w * 0.5, w - pad * 4 - (ms ? ms + pad : 0));
     ctx.save();
     const fit = (txt, b) => { ctx.font = font(b); let s = txt; while (ctx.measureText(s).width > maxText && s.length > 4) s = s.slice(0, -2); return s === txt ? s : s.trim() + '…'; };
     const shown = lines.map((l, i) => fit(l, i === 0));
     const textW = Math.max(...shown.map((l, i) => { ctx.font = font(i === 0); return ctx.measureText(l).width; }));
     const boxH = Math.max(ms, shown.length * lh) + pad, boxW = (ms ? ms + pad : 0) + textW + pad * 1.5;
     const bx = pad, by = h - pad - boxH;
-    const OP = 0.3; // độ đậm của bản đồ & nền: 30%
-    ctx.fillStyle = `rgba(12, 8, 50, ${OP})`; rr(ctx, bx, by, boxW, boxH, pad * 0.6); ctx.fill();
+    ctx.fillStyle = 'rgba(10, 8, 40, .14)'; rr(ctx, bx, by, boxW, boxH, pad * 0.8); ctx.fill();
     if (ms) {
       const mx = bx + pad / 2, my = by + pad / 2, cx = mx + ms / 2, cy = my + ms / 2;
-      ctx.save(); rr(ctx, mx, my, ms, ms, pad * 0.45); ctx.clip();
-      if (inset) { ctx.globalAlpha = OP; ctx.drawImage(inset, mx, my, ms, ms); ctx.globalAlpha = 1; }
+      ctx.save(); rr(ctx, mx, my, ms, ms, pad * 0.6); ctx.clip();
+      if (inset) { ctx.globalAlpha = 0.34; ctx.drawImage(inset, mx, my, ms, ms); ctx.globalAlpha = 1; }
       else {
-        ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(mx, my, ms, ms);
-        ctx.strokeStyle = `rgba(255,255,255,${OP * 0.7})`; ctx.lineWidth = 1;
-        for (let k = 1; k < 4; k++) { const d = ms * k / 4; ctx.beginPath(); ctx.moveTo(mx + d, my); ctx.lineTo(mx + d, my + ms); ctx.moveTo(mx, my + d); ctx.lineTo(mx + ms, my + d); ctx.stroke(); }
+        ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 1;
+        for (let k = 1; k < 3; k++) { const d = ms * k / 3; ctx.beginPath(); ctx.moveTo(mx + d, my); ctx.lineTo(mx + d, my + ms); ctx.moveTo(mx, my + d); ctx.lineTo(mx + ms, my + d); ctx.stroke(); }
       }
       ctx.restore();
-      ctx.strokeStyle = `rgba(255,255,255,${OP + 0.15})`; ctx.lineWidth = Math.max(1, m * 0.0025); rr(ctx, mx, my, ms, ms, pad * 0.45); ctx.stroke();
-      const r = ms * 0.075; // ghim
-      ctx.fillStyle = '#e53935'; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, r * 0.22);
-      ctx.beginPath(); ctx.arc(cx, cy - r * 1.35, r, Math.PI * 0.85, Math.PI * 2.15); ctx.lineTo(cx, cy); ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy - r * 1.35, r * 0.38, 0, Math.PI * 2); ctx.fill();
-      if (inset) { ctx.font = `500 ${Math.max(8, Math.round(fs * 0.42))}px Arial, sans-serif`; ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('© OpenStreetMap', mx + ms - 3, my + ms - 2); ctx.textAlign = 'left'; }
+      ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 1; rr(ctx, mx, my, ms, ms, pad * 0.6); ctx.stroke();
+      const r = Math.max(2.5, ms * 0.055); // điểm vị trí
+      ctx.fillStyle = 'rgba(229,57,53,.8)'; ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(1, r * 0.35);
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if (inset) { ctx.font = `400 ${Math.max(7, Math.round(fs * 0.5))}px Arial, sans-serif`; ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('© OpenStreetMap', mx + ms - 2, my + ms - 1); ctx.textAlign = 'left'; }
     }
     const tx = bx + pad * 0.75 + (ms ? ms + pad / 2 : 0);
     const ty0 = by + pad / 2 + (Math.max(ms, shown.length * lh) - shown.length * lh) / 2;
     ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = Math.max(2, fs * 0.3); ctx.shadowOffsetY = 1; // chữ vẫn rõ trên nền sáng
-    shown.forEach((l, i) => { ctx.font = font(i === 0); ctx.fillStyle = i === 0 ? '#ffffff' : 'rgba(255,255,255,.88)'; ctx.fillText(l, tx, ty0 + lh * i + lh / 2); });
+    ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = Math.max(2, fs * 0.25); ctx.shadowOffsetY = 1; // chữ vẫn đọc được trên nền sáng
+    shown.forEach((l, i) => { ctx.font = font(i === 0); ctx.fillStyle = i === 0 ? 'rgba(255,255,255,.82)' : 'rgba(255,255,255,.68)'; ctx.fillText(l, tx, ty0 + lh * i + lh / 2); });
     ctx.restore();
   }
   async function makePhoto(src, sw, sh, label, loc) {
@@ -1239,7 +1267,7 @@
     const it = cam.items[cam.idx]; if (!it) return;
     const r = cur.res[it.c] || {};
     const head = document.getElementById('cam-item');
-    if (head) head.innerHTML = `<b>${esc(it.c)}</b><span class="cam-pos">${cam.idx + 1}/${cam.items.length}</span><p>${esc(it.t)}</p>`;
+    if (head) head.innerHTML = `<b>${esc(it.c)}</b><span class="cam-pos">${cam.idx + 1}/${cam.items.length}</span><p>${esc(it.t)}</p>${it.ph ? `<p class="cam-guide">${esc(it.ph)}</p>` : ''}`;
     const seg = document.getElementById('cam-seg');
     if (seg) seg.innerHTML = ['ok', 'nok', 'na'].map((k) => `<button class="s-${k} ${r.s === k ? 'on' : ''}" data-act="cam-st" data-v="${k}">${ST[k]}</button>`).join('');
     camStrip();
@@ -1247,7 +1275,7 @@
   function camStrip() {
     const it = cam.items[cam.idx]; const el = document.getElementById('cam-strip'); if (!it || !el) return;
     const ids = (cur.res[it.c] || {}).ph || [];
-    el.innerHTML = `<span class="cam-count">${ids.length} ảnh${cam.pending ? ` · đang lưu ${cam.pending}` : ''}</span>` +
+    el.innerHTML = `<span class="cam-count">${ids.length}${it.p ? '/' + it.p : ''} ảnh${cam.pending ? ` · đang lưu ${cam.pending}` : ''}</span>` +
       ids.slice(-5).map((id) => `<img src="${thumbCache.get(id) || PH_BLANK}" alt="">`).join('');
   }
   function camShot() {
@@ -1448,6 +1476,15 @@
       <p class="muted small" style="margin:0">Bộ checklist ${esc(CL.version)}. Cài lên màn hình chính: Safari → Chia sẻ → "Thêm vào MH chính"; Chrome → ⋮ → "Cài đặt ứng dụng".</p>
       <div class="modal-actions"><button class="btn" data-act="close">Đóng</button><button class="btn primary" data-act="save-settings">Lưu</button></div>`);
   }
+  // Hướng dẫn thực hiện của một đầu việc bảo trì: làm gì, cách làm, vì sao, lưu ý, ảnh cần chụp.
+  function infoModal(it) {
+    const i = it.i || {}; const sec = (h, t) => (t ? `<div class="info-sec"><h3>${h}</h3><p>${esc(t)}</p></div>` : '');
+    const meta = [it.f && PM.freq[it.f] ? 'Tần suất: ' + PM.freq[it.f].toLowerCase() : 'Tần suất: mỗi quý', it.off ? 'Cần cắt điện' : '', it.u ? 'Ghi giá trị đo (' + it.u + ')' : '', it.form ? 'Mẫu checklist quý: dòng ' + it.form : ''].filter(Boolean).join(' · ');
+    openModal(`<div class="item-code">${esc(it.c)}</div><h2 class="info-ttl">${esc(it.t)}</h2>
+      ${sec('Làm gì', i.lam)}${sec('Cách làm', i.cach)}${sec('Vì sao quan trọng', i.vi)}${sec('Lưu ý', i.luu)}${sec('Ảnh cần chụp', it.ph)}
+      <p class="muted small" style="margin:0">${esc(meta)}</p>
+      <button class="btn block" data-act="close">Đóng</button>`);
+  }
   function addItemModal() {
     openModal(`<h2>Thêm hạng mục – ${esc(secById(S.sec).title)}</h2>
       <div class="field"><label for="ni-t">Nội dung kiểm tra</label><textarea class="inp" id="ni-t" placeholder="VD: Kiểm tra quạt thông gió phòng inverter"></textarea></div>
@@ -1506,17 +1543,20 @@
       address: 'KCN Tân Đức, Đức Hòa, Long An', dc: '998,4', ac: '800', module: 'Mono 580 Wp × 1.722 tấm',
       inverter: '8 × 100 kW string inverter', owner: 'Công ty CP Năng lượng ABC', weather: 'Nắng, ít mây', irr: '780', temp: '33'
     });
-    d.site = PM.quick({ roof: 2, ladder: 2, inv: 8, db: 1, mon: 1, ws: 1, gnd: 1, msb: 1, ff: 1 });
-    d.site.assets.forEach((a) => { if (a.k === 'roof') { a.z = 'Mái xưởng ' + a.id.slice(1); a.n = 'Dàn pin mái xưởng ' + a.id.slice(1); } if (a.k === 'ladder') a.z = 'Mái xưởng ' + a.id.slice(1); if (a.k === 'ws') a.z = 'Mái xưởng 1'; });
+    d.site = PM.quick({ roof: 2, ladder: 2, inv: 8, db: 1, mon: 1, ws: 1, ist: 1, gnd: 1, msb: 1, ff: 1 });
+    d.site.assets.forEach((a) => { if (a.k === 'roof') { a.z = 'Mái xưởng ' + a.id.slice(1); a.n = 'Dàn pin mái xưởng ' + a.id.slice(1); } if (a.k === 'ladder') a.z = 'Mái xưởng ' + a.id.slice(1); if (a.k === 'ws') a.z = 'Mái xưởng 1'; if (a.k === 'inv') a.str = PM.parseStr('12'); });
     d.site.zones = ['Trước khi lên mái', 'Mái xưởng 1', 'Mái xưởng 2', 'Trạm inverter', 'Điểm đấu nối', 'Kết thúc'];
     d.site = PM.normalize(d.site);
     cur = d;
     for (const it of allItems()) {
       if (/^(INV[78]|MSB1|END)-/.test(it.c)) continue;
-      d.res[it.c] = { s: 'ok' }; if (it.u) d.res[it.c].val = it.u === 'tấm' ? '0' : it.u === 'kWh' ? '412.560' : '';
+      d.res[it.c] = { s: 'ok' }; if (it.u) d.res[it.c].val = it.u === 'tấm' ? '0' : it.u === '°C' ? '48' : '';
+      if (it.ms) { const mv = {}; it.ms.forEach((l, k) => { mv[l] = (11.8 + ((k * 7) % 5) / 10).toFixed(1).replace('.', ','); }); d.res[it.c].mv = mv; d.res[it.c].val = mvStats(it, d.res[it.c]).summary; }
     }
-    d.res['R2-06'] = { s: 'nok', sev: 'B', val: '2', note: 'Mái xưởng 2, dãy 4: 2 tấm vỡ kính do vật rơi. Đã cô lập string, đánh dấu trên bản vẽ.', resp: 'CĐT', due: '2026-12-20' };
-    d.res['INV3-02'] = { s: 'nok', sev: 'C', note: 'Quạt số 2 kêu to, chưa báo lỗi. Đề xuất thay ở đợt sau.', resp: 'O&M' };
+    d.res['R2-07'] = { s: 'nok', sev: 'B', val: '2', note: 'Mái xưởng 2, dãy 4: 2 tấm vỡ kính do vật rơi. Đã cô lập string, đánh dấu trên bản vẽ.', resp: 'CĐT', due: '2026-12-20' };
+    d.res['INV3-05'] = { s: 'nok', sev: 'C', note: 'Quạt số 2 kêu to sau khi vệ sinh, chưa báo lỗi. Đề xuất thay ở đợt sau.', resp: 'O&M' };
+    d.res['INV2-08'].mv.PV7 = '8,4'; d.res['INV2-08'].s = 'nok'; d.res['INV2-08'].sev = 'B'; d.res['INV2-08'].note = 'PV7 thấp hơn các string còn lại khoảng 30 %. Cần kiểm tra tấm pin và MC4 của string này.';
+    d.res['INV2-08'].val = mvStats(allItems().find((x) => x.c === 'INV2-08'), d.res['INV2-08']).summary;
     cur = null;
     await store.put('insp', d);
     openInsp(d.id);
@@ -1559,6 +1599,7 @@
         const K = PM.kindOf(a.k);
         a.n = name || K.one; a.z = document.getElementById('as-z').value.trim() || K.zone; a.d = document.getElementById('as-d').value.trim();
         a.opt = [...$modal.querySelectorAll('[data-opt]')].filter((x) => x.checked).map((x) => x.dataset.opt);
+        { const si = document.getElementById('as-s'); if (si) a.str = PM.parseStr(si.value); }
         // Khu vực mới đứng trước "Kết thúc".
         if (!cur.site.zones.includes(a.z)) { const ez = cur.site.zones.indexOf(PM.kindOf('end').zone); cur.site.zones.splice(ez < 0 ? cur.site.zones.length : ez, 0, a.z); }
         closeModal(); siteChanged(); break;
@@ -1614,7 +1655,7 @@
         break;
       }
       case 'sev': R(c).sev = v; touch(); refreshItem(c); break;
-      case 'hint': hintSet.has(c) ? hintSet.delete(c) : hintSet.add(c); refreshItem(c); break;
+      case 'hint': { const it = findItem(c); if (it && it.i) { infoModal(it); break; } hintSet.has(c) ? hintSet.delete(c) : hintSet.add(c); refreshItem(c); break; }
       case 'more': openSet.add(c); refreshItem(c); break;
       case 'less': openSet.delete(c); refreshItem(c); break;
       case 'ph-view': viewPhoto(c, b.dataset.id); break;
@@ -1701,7 +1742,8 @@
 
   document.addEventListener('input', (e) => {
     const t = e.target;
-    if (t.dataset.f && t.dataset.c) { R(t.dataset.c)[t.dataset.f] = t.value; touch(); }
+    if (t.dataset.mf && t.dataset.c) { const r = R(t.dataset.c); (r.mv = r.mv || {})[t.dataset.mf] = t.value; mvUpdate(t.dataset.c); touch(); }
+    else if (t.dataset.f && t.dataset.c) { R(t.dataset.c)[t.dataset.f] = t.value; touch(); }
     else if (t.dataset.info) { cur.info[t.dataset.info] = t.value; if (S.view !== 'info') touch(); }
     else if (t.hasAttribute('data-vnote')) { cur.verdict.note = t.value; touch(); }
     else if (t.hasAttribute('data-search')) {

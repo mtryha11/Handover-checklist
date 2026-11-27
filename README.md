@@ -17,8 +17,8 @@
   vật liệu → đấu nối → vận hành → nhãn, biển báo → đo kiểm.
 - **Camera trong ứng dụng**: chụp liên tục nhiều ảnh, chuyển *Mục trước / Mục sau* và chấm Đạt / Không đạt / N/A ngay
   trên màn hình camera; có đèn (Android). Nút camera nhanh ở góc mỗi hạng mục.
-- **Ảnh có vị trí**: góc ảnh có bản đồ nhỏ (OpenStreetMap) làm mờ với ghim vị trí, mã hạng mục, tọa độ GPS ±m và địa chỉ
-  dự án; không ghi giờ. Mất mạng thì vẫn có tọa độ, bản đồ thay bằng khung lưới. Tắt được trong Cài đặt.
+- **Ảnh có vị trí**: góc ảnh có dấu nhỏ, mờ gồm bản đồ thu nhỏ (OpenStreetMap), mã hạng mục và tọa độ GPS ±m;
+  không ghi giờ. Mất mạng thì vẫn có tọa độ, bản đồ thay bằng khung lưới. Tắt được trong Cài đặt.
 - **Danh sách tồn tại (punch list)** phân mức **A** (nghiêm trọng – xử lý trước bàn giao), **B** (quan trọng – xử lý
   theo thời hạn), **C** (khuyến nghị), kèm người chịu trách nhiệm và hạn khắc phục.
 - **Kết luận tự động** (đủ điều kiện / có điều kiện / chưa đủ điều kiện nhận bàn giao), có thể chỉnh tay.
@@ -36,9 +36,12 @@
 
 Chế độ thứ hai của ứng dụng (nút **Tạo đợt bảo trì quý** ở trang chủ). Checklist không cố định mà được nhân ra từ hai thứ:
 
-- **Bộ đầu việc theo loại thiết bị** trong [`js/pm.js`](js/pm.js): khu mái, thang, inverter, tủ điện AC, giám sát, cảm biến,
-  tiếp địa, điểm đấu nối, PCCC… Mỗi đầu việc có tần suất (quý / 6 tháng / năm), yêu cầu bằng chứng (ảnh, giá trị đo),
-  cờ "cần cắt điện" và dòng tương ứng trên mẫu checklist quý A–H đang ký với chủ đầu tư.
+- **Bộ đầu việc theo loại thiết bị** trong [`js/pm.js`](js/pm.js): khu mái, thang, nhà trạm, inverter, tủ điện AC, giám sát,
+  camera, trạm thời tiết, chống sét, tiếp địa, điểm đấu nối, đồng hồ chống phát ngược, PCCC… Mỗi đầu việc có tần suất
+  (quý / 6 tháng / năm), số ảnh tối thiểu kèm **hướng dẫn chụp ảnh** hiện ngay dưới nội dung, giá trị đo, cờ "cần cắt điện",
+  dòng tương ứng trên mẫu checklist quý A–H, và phần giải thích khi bấm nút **i** (làm gì, cách làm, vì sao quan trọng, lưu ý).
+  Việc vệ sinh tách thành hai dòng **trước** và **sau** vệ sinh. Mục "đo kẹp dòng toàn bộ string" có một ô nhập cho từng
+  string của inverter và tự tô màu string lệch quá 10 % so với trung vị.
 - **Hồ sơ thiết bị của dự án**: danh mục thiết bị và khu vực, lập một lần từ bản vẽ hoàn công. Nhập bằng file `.json`,
   lập nhanh theo số lượng, hoặc thêm / sửa từng thiết bị ở tab **Thông tin**. Hồ sơ lưu trên máy, quý sau chọn lại.
 
@@ -57,9 +60,12 @@ File hồ sơ thiết bị:
   "notes": ["Điểm cần xác nhận tại hiện trường"] }
 ```
 
-`k` là loại thiết bị (`pre`, `ladder`, `roof`, `ws`, `inv`, `db`, `mon`, `gnd`, `pump`, `ff`, `cable`, `msb`, `tba`, `end`);
-`id` là mã duy nhất, **không đổi sau khi đã có kết quả**; `z` là khu vực; `opt` bật đầu việc tùy chọn (`apfc` tủ có tụ bù,
-`zx` có chống phát ngược). Hồ sơ dự án của khách hàng không nằm trong mã nguồn.
+`k` là loại thiết bị (`pre`, `ladder`, `roof`, `ws`, `lps`, `pump`, `ist`, `inv`, `db`, `mon`, `cctv`, `ff`, `gnd`, `cable`,
+`msb`, `zx`, `tba`, `end`);
+`id` là mã duy nhất, **không đổi sau khi đã có kết quả**; `z` là khu vực; `str` là danh sách string của inverter
+(`"str": 14` hoặc `["PV1", "PV2", "PV13"]`); `opt` bật đầu việc tùy chọn (`clean` khu mái có vệ sinh tấm pin, `fan` tủ có quạt,
+`meter` có công tơ sản lượng, `apfc` có tụ bù, `ups`, `auto` bình chữa cháy tự động, `smoke` đầu báo cháy, `ug` cáp ngầm).
+Hồ sơ dự án của khách hàng không nằm trong mã nguồn.
 
 ## Cài lên điện thoại
 
