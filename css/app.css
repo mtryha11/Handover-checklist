@@ -529,6 +529,9 @@ button.stat:not(:disabled):active { background: var(--na-bg); }
 .login-card { display: flex; flex-direction: column; gap: 10px; border-color: var(--brand-2); }
 
 /* Thanh tiêu đề không còn dính trên đầu màn hình: nó cuộn đi cùng nội dung, không che nội dung nữa.
-   Chỉ còn một dải mỏng đúng bằng thanh trạng thái của điện thoại để chữ không chạy dưới đồng hồ. */
+   Chỉ còn một dải mỏng đúng bằng thanh trạng thái của điện thoại để chữ không chạy dưới đồng hồ.
+   Toàn bộ nội dung bắt đầu BÊN DƯỚI vùng đồng hồ / Dynamic Island (phần đệm trên của body). */
+body { padding-top: env(safe-area-inset-top, 0px); }
+html.artifact body { padding-top: 0; } /* bản xem trước đã được trang chứa nó chừa sẵn vùng này */
 .topbar { position: static; transition: none; }
 html.edge-light body::before { background: var(--bg); }

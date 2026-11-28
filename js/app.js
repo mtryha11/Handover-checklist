@@ -8,6 +8,7 @@
   const PM = window.PM;
   const isPM = (x) => { x = x === undefined ? cur : x; return !!(x && x.info && x.info.purpose === 'pm'); };
   const ARTIFACT = !!window.__ARTIFACT__;
+  if (ARTIFACT) document.documentElement.classList.add('artifact');
   const STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   const $app = document.getElementById('app');
   const $modal = document.getElementById('modal-root');
