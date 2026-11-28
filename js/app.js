@@ -42,6 +42,7 @@
     dup: sv('<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V4a2 2 0 0 1 2-2h10"/>'),
     up: sv('<path d="M12 19V5M5 12l7-7 7 7"/>'),
     bolt: sv('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>'),
+    mic: sv('<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4M8 22h8"/>'),
     sun: sv('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>')
   };
   const LOGO = window.RAITEK_LOGO ? `<img class="brand-mark" src="${window.RAITEK_LOGO}" alt="Raitek">` : '';
@@ -179,7 +180,7 @@
 
   /* ---------------- state ---------------- */
   const settings = Object.assign({ inspector: '', om: '', theme: 'system', geoStamp: true }, lsGet('pvho-settings', {}));
-  const S = { view: 'home', tab: 'check', sec: null, filter: 'all', q: '', list: [], isNew: false, focus: null };
+  const S = { view: 'home', tab: 'check', sec: null, filter: 'all', q: '', list: [], isNew: false, focus: null, sel: null };
   let cur = null;            // inspection đang mở
   const photoCache = new Map(); // ảnh gốc (chỉ dùng khi xem từng ảnh và khi xuất file)
   const photoGeo = new Map();   // tọa độ chụp của từng ảnh
@@ -369,6 +370,7 @@
 
   /* ---------------- navigation ---------------- */
   function go(view, opts = {}) {
+    if (mic.rec) micToggle(mic.c);
     Object.assign(S, { view }, opts);
     render(true);
     try { if (S.view !== 'home' && !(history.state && history.state.pvho)) history.pushState({ pvho: 1 }, ''); } catch (e) { /* ignore */ }
@@ -378,10 +380,27 @@
     else if (S.view === 'insp' || S.view === 'info') { flush(); cur = null; geoStop(); loadHome(); }
     else loadHome();
   }
-  window.addEventListener('popstate', () => {
-    if ($modal.innerHTML) { closeModal(); }
+  let lastBack = 0;
+  function goBack() {
+    if (Date.now() - lastBack < 600) return;
+    lastBack = Date.now();
+    if ($modal.innerHTML) { if (askResolve) settleAsk(false); else closeModal(); }
     else if (S.view !== 'home') goUp();
-  });
+    else if (S.sel) { S.sel = null; render(false); }
+  }
+  window.addEventListener('popstate', goBack);
+  // Vuốt từ mép trái sang phải để quay lại (ứng dụng cài lên màn hình chính và trong Lark không có nút Back).
+  let swipe = null;
+  document.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    swipe = e.touches.length === 1 && t.clientX < 28 && !(e.target.closest && e.target.closest('#sigpad')) ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!swipe) return;
+    const t = e.changedTouches[0]; const dx = t.clientX - swipe.x, dy = Math.abs(t.clientY - swipe.y), dt = Date.now() - swipe.at;
+    swipe = null;
+    if (dx > 70 && dy < 60 && dt < 700) goBack();
+  }, { passive: true });
 
   async function loadHome() {
     S.list = (await store.all('insp')).sort((a, b) => b.updated - a.updated);
@@ -420,11 +439,24 @@
     return `<div class="bar" aria-hidden="true"><i class="b-ok" style="width:${w(n.ok)}%"></i><i class="b-nok" style="width:${w(n.nok)}%"></i><i class="b-na" style="width:${w(n.na)}%"></i></div>`;
   }
   function stats(n) {
-    return `<div class="stats" id="stats">
-      <div class="stat ok"><b>${n.ok}</b><span>Đạt</span></div>
-      <div class="stat nok"><b>${n.nok}</b><span>Không đạt</span></div>
-      <div class="stat na"><b>${n.na}</b><span>N/A</span></div>
-      <div class="stat"><b>${n.none}</b><span>Chưa kiểm</span></div></div>`;
+    const t = (k, cls, v) => `<button class="stat ${cls}" data-act="stat" data-v="${k}" ${v ? '' : 'disabled'} aria-label="Xem ${v} hạng mục ${STAT[k]().toLowerCase()}"><b>${v}</b><span>${STAT[k]()}</span></button>`;
+    return `<div class="stats" id="stats">${t('ok', 'ok', n.ok)}${t('nok', 'nok', n.nok)}${t('na', 'na', n.na)}${t('none', '', n.none)}</div>`;
+  }
+  const STAT = { ok: () => 'Đạt', nok: () => 'Không đạt', na: () => 'N/A', none: () => (isPM() ? 'Chưa làm' : 'Chưa kiểm') };
+  // Bấm vào ô thống kê: liệt kê ngắn gọn các hạng mục thuộc trạng thái đó, bấm một dòng để tới đúng hạng mục.
+  function statModal(k) {
+    const inSec = S.view === 'sec';
+    const items = (inSec ? secItems(secById(S.sec)).map((it) => Object.assign({ secId: S.sec }, it)) : allItems()).filter((it) => ((cur.res[it.c] || {}).s || 'none') === k);
+    let last = null;
+    const rows = items.map((it) => {
+      const sec = secById(it.secId); const r = cur.res[it.c] || {};
+      const head = it.secId !== last ? `<h3 class="grp">${esc(isPM() ? `${sec.id} · ${sec.title}` : sec.title)} (${items.filter((x) => x.secId === it.secId).length})</h3>` : '';
+      last = it.secId;
+      return head + `<button class="nav-row" data-act="goto" data-c="${esc(it.c)}" data-sec="${esc(it.secId)}"><span class="item-code">${esc(it.c)}${k === 'nok' ? ` · ${esc(r.sev || 'B')}` : ''}</span><span class="nav-t">${esc(k === 'nok' && r.note ? r.note : it.t)}</span>${I.chev}</button>`;
+    }).join('');
+    openModal(`<h2>${STAT[k]()} · ${items.length} hạng mục</h2><p class="muted small" style="margin:0">${inSec ? esc(secById(S.sec).title) : 'Toàn bộ ' + (isPM() ? 'đợt bảo trì' : 'biên bản')}. Bấm một dòng để tới hạng mục đó.</p>
+      <div class="items nav-list">${rows || '<p class="muted">Không có hạng mục nào.</p>'}</div>
+      <button class="btn block" data-act="close">Đóng</button>`);
   }
 
   function render(resetScroll) {
@@ -444,7 +476,9 @@
     const cards = S.list.map((x) => {
       cur = x; const n = count(allItems()); cur = null;
       const p = PURPOSE[x.info.purpose] || PURPOSE.handover;
-      return `<button class="card insp-card" data-act="open" data-id="${x.id}">
+      const on = S.sel && S.sel.has(x.id);
+      return `<button class="card insp-card ${S.sel ? 'picking' : ''} ${on ? 'picked' : ''}" data-act="${S.sel ? 'sel-toggle' : 'open'}" data-id="${x.id}" ${S.sel ? `aria-pressed="${!!on}"` : ''}>
+        ${S.sel ? `<span class="pick-box">${on ? I.check : ''}</span>` : ''}
         <div class="row"><h3 class="grow">${esc(x.info.project || 'Chưa đặt tên')}</h3><span class="chip sun">${n.pct}%</span></div>
         <div class="insp-meta"><span>${esc(p.label)}${x.info.purpose === 'pm' ? ' · ' + esc(periodLabel(x.info)) : ''}</span><span>${esc(CL.types[x.info.type] || '')}</span>${x.info.dc ? `<span>${esc(x.info.dc)} kWp</span>` : ''}<span>${fmtDate(x.info.date)}</span></div>
         ${bar(n)}
@@ -464,10 +498,13 @@
         <button class="btn block" data-act="new">${I.plus} Tạo biên bản bàn giao / audit</button>
       </section>
       <div class="row"><span class="eyebrow grow">Biên bản đã lưu (${S.list.length})</span>
+        ${S.list.length && !S.sel ? `<button class="btn ghost" style="min-height:38px;font-size:13px" data-act="sel-start">${I.trash} Chọn để xóa</button>` : ''}
         <label class="btn ghost" style="min-height:38px;font-size:13px">${I.upload} Nhập file sao lưu / hồ sơ<input type="file" accept=".json,application/json" data-import hidden></label></div>
+      ${S.sel ? `<div class="sel-bar"><button class="btn" data-act="sel-cancel">Hủy</button><span class="grow">Đã chọn ${S.sel.size}/${S.list.length}</span><button class="btn" data-act="sel-all">Chọn hết</button><button class="btn danger" data-act="sel-delete" ${S.sel.size ? '' : 'disabled'}>${I.trash} Xóa</button></div>` : ''}
       ${cards || `<div class="card empty">${I.doc}<p>Chưa có biên bản nào trên máy này.</p><div class="btn-grid"><button class="btn" data-act="demo-pm">Ví dụ bảo trì quý</button><button class="btn" data-act="demo">Ví dụ bàn giao</button></div></div>`}
       ${!store.db ? '<p class="note-box">Trình duyệt đang chặn bộ nhớ lưu trữ. Dữ liệu chỉ tồn tại tới khi đóng trang – hãy xuất file sao lưu.</p>' : ''}
       <p class="muted small" style="text-align:center">Dữ liệu chỉ lưu trên điện thoại này. Xuất file sao lưu (.json) để chuyển máy hoặc lưu trữ.</p>
+      ${S.sel ? '<div style="height:84px"></div>' : ''}
     </main>`;
   }
 
@@ -603,6 +640,7 @@
     const detail = open ? `<div class="detail">
         ${st === 'nok' ? `<div class="sev" role="group" aria-label="Mức độ">${['A', 'B', 'C'].map((k) => `<button class="sv-${k} ${(r.sev || 'B') === k ? 'on' : ''}" data-act="sev" data-v="${k}" data-c="${c}"><b>${k}</b>${SEV[k].short}</button>`).join('')}</div>` : ''}
         <textarea class="inp" id="n-${c}" data-f="note" data-c="${c}" placeholder="${st === 'nok' ? 'Mô tả tồn tại, vị trí (dãy / string / tủ / inverter số…)' : 'Ghi chú'}">${esc(r.note || '')}</textarea>
+        ${SR ? `<button class="btn mic ${mic.c === c ? 'on' : ''}" data-act="mic" data-c="${c}">${I.mic}<span>${mic.c === c ? 'Đang nghe… bấm để dừng' : 'Nói để ghi chú'}</span></button>` : '<p class="muted small" style="margin:0">Nhập bằng giọng nói: chạm vào ô ghi chú rồi bấm biểu tượng micro trên bàn phím.</p>'}
         ${st === 'nok' ? `<div class="two"><div class="field"><label for="rp-${c}">Trách nhiệm xử lý</label><input class="inp" id="rp-${c}" data-f="resp" data-c="${c}" value="${esc(r.resp || '')}" placeholder="EPC / CĐT / O&M"></div>
           <div class="field"><label for="du-${c}">Hạn khắc phục</label><input class="inp" type="date" id="du-${c}" data-f="due" data-c="${c}" value="${esc(r.due || '')}"></div></div>` : ''}
         ${nph ? `<div class="photos">${photosHTML(c, r.ph)}</div>` : ''}
@@ -644,6 +682,40 @@
     const st = document.getElementById('stats');
     if (st) st.outerHTML = stats(S.view === 'sec' ? count(secItems(secById(S.sec))) : n);
     const tb = document.querySelector('.tabbar'); if (tb) tb.outerHTML = tabbar();
+  }
+
+  /* ----- ghi chú bằng giọng nói (Web Speech API; cần mạng, tùy trình duyệt) ----- */
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = { rec: null, c: null, on: false };
+  function micStop() { mic.on = false; if (mic.rec) { try { mic.rec.stop(); } catch (e) { /* ignore */ } } }
+  function micBtn(c, on) {
+    const b = document.querySelector(`[data-act="mic"][data-c="${c}"]`);
+    if (b) { b.classList.toggle('on', on); b.querySelector('span').textContent = on ? 'Đang nghe… bấm để dừng' : 'Nói để ghi chú'; }
+  }
+  function micStart(c) {
+    const rec = new SR(); rec.lang = 'vi-VN'; rec.interimResults = true; rec.continuous = false;
+    const ta = document.getElementById('n-' + c); const base = (ta ? ta.value : (cur.res[c] || {}).note || '').trim();
+    rec.onresult = (e) => {
+      if (!cur) { micStop(); return; }
+      let said = ''; for (let i = 0; i < e.results.length; i++) said += e.results[i][0].transcript;
+      const text = [base, said.trim()].filter(Boolean).join(' ');
+      const el = document.getElementById('n-' + c); if (el) el.value = text;
+      R(c).note = text; touch();
+    };
+    rec.onerror = (e) => {
+      const msg = { 'not-allowed': 'Chưa cho phép dùng micro cho trang này', 'service-not-allowed': 'Trình duyệt này không cho nhận giọng nói', network: 'Nhận giọng nói cần có mạng', 'audio-capture': 'Không tìm thấy micro' }[e.error];
+      if (msg) toast(msg, 3500);
+      if (e.error !== 'aborted') mic.on = false; // im lặng hoặc lỗi: dừng hẳn, không tự nghe lại
+    };
+    // Mỗi lượt nghe kết thúc khi ngừng nói; tự nghe tiếp cho tới khi bấm dừng.
+    rec.onend = () => { if (mic.rec !== rec) return; mic.rec = null; if (mic.on && cur && document.getElementById('n-' + c)) micStart(c); else { mic.c = null; mic.on = false; micBtn(c, false); } };
+    mic.rec = rec; mic.c = c;
+    try { rec.start(); micBtn(c, true); } catch (e) { mic.rec = null; mic.c = null; mic.on = false; toast('Không bật được nhận giọng nói trên trình duyệt này'); }
+  }
+  function micToggle(c) {
+    const same = mic.c === c; const was = mic.rec;
+    if (was) { mic.rec = null; mic.on = false; try { was.stop(); } catch (e) { /* ignore */ } micBtn(mic.c, false); mic.c = null; if (same) return; }
+    mic.on = true; micStart(c);
   }
 
   /* ----- punch list ----- */
@@ -1327,6 +1399,7 @@
     if (!r.ok) throw new Error(j.error || 'Lỗi máy chủ đồng bộ (HTTP ' + r.status + ')');
     return j;
   }
+  const LARK_CELL = 100;
   function larkLogin() {
     const ret = location.origin + location.pathname;
     location.href = settings.larkUrl.replace(/\/$/, '') + '/auth/login?return=' + encodeURIComponent(ret);
@@ -1396,8 +1469,12 @@
         const c = count(its), label = p.label;
         const kp = `% hoàn thành – ${label}`, kn = `Không đạt – ${label}`, ka = `Ảnh – ${label}`;
         sum[kp] = c.pct; sum[kn] = c.nok;
-        sum[ka] = its.filter((it) => (insp.res[it.c] || {}).s !== 'nok').flatMap(toksOf);
-        types[kp] = 'number'; types[kn] = 'number'; types[ka] = 'attachment';
+        types[kp] = 'number'; types[kn] = 'number';
+        // Lark Base nhận tối đa 100 file trong một ô: quá 100 ảnh thì chia sang cột "(2)", "(3)"…
+        const tk = its.filter((it) => (insp.res[it.c] || {}).s !== 'nok').flatMap(toksOf);
+        const parts = Math.max(1, Math.ceil(tk.length / LARK_CELL), (L.cols && L.cols[label]) || 1);
+        for (let k = 0; k < parts; k++) { const name = k ? `${ka} (${k + 1})` : ka; sum[name] = tk.slice(k * LARK_CELL, (k + 1) * LARK_CELL); types[name] = 'attachment'; }
+        (L.cols = L.cols || {})[label] = parts;
       }
       const sh = hashOf(JSON.stringify(sum));
       if (!L.rec || L.sumH !== sh) {
@@ -1415,7 +1492,7 @@
           'Dự án': f.project, 'Phần': `${sec.part}. ${sec.partTitle}`, 'Nhóm': sec.title + (isPM(insp) ? ` (${sec.id})` : ''), 'Nhóm con': it.g || '', 'Mã hạng mục': it.c,
           'Nội dung kiểm tra': it.t, 'Kết quả': ST.nok, 'Mức độ': r.sev || 'B',
           'Ghi chú / mô tả tồn tại': noteOf(it, r), 'Giá trị đo': r.val || '', 'Đơn vị': it.u || '', 'Trách nhiệm': r.resp || '',
-          'Hạn khắc phục': r.due || '', 'Ảnh': toks, 'Số ảnh': toks.length, 'Vị trí GPS': g ? `${g.lat.toFixed(6)}, ${g.lng.toFixed(6)}` : ''
+          'Hạn khắc phục': r.due || '', 'Ảnh': toks.slice(0, LARK_CELL), 'Số ảnh': toks.length, 'Vị trí GPS': g ? `${g.lat.toFixed(6)}, ${g.lng.toFixed(6)}` : ''
         };
         const h = hashOf(JSON.stringify(data) + L.rec);
         if (!li.rec || li.h !== h) changed.push({ c: it.c, h, key: `${insp.id}|${it.c}`, recordId: li.rec || '', data });
@@ -1475,7 +1552,8 @@
         ${[['system', 'Theo hệ thống'], ['light', 'Sáng – dễ đọc ngoài nắng'], ['dark', 'Tối']].map(([k, l]) => `<option value="${k}" ${settings.theme === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="field"><label for="s-lark">Máy chủ đồng bộ Lark Base</label><input class="inp" id="s-lark" inputmode="url" placeholder="https://lark-bridge.raitek.vn" value="${esc(settings.larkUrl || '')}"></div>
       ${settings.larkUrl ? `<div class="row">${settings.larkToken ? `<span class="grow small">Đã đăng nhập Lark: <b>${esc(settings.larkUser || '')}</b></span><button class="btn" data-act="lark-logout">Đăng xuất</button>` : `<span class="grow small muted">Chưa đăng nhập Lark</span><button class="btn primary" data-act="lark-login">Đăng nhập Lark</button>`}</div>` : ''}
-      <p class="muted small" style="margin:0">Bộ checklist ${esc(CL.version)}. Cài lên màn hình chính: Safari → Chia sẻ → "Thêm vào MH chính"; Chrome → ⋮ → "Cài đặt ứng dụng".</p>
+      ${sitesAll().length ? `<div class="field"><label>Hồ sơ thiết bị dự án đã lưu trên máy</label>${sitesAll().map((x, i) => `<div class="row" style="flex-wrap:nowrap"><span class="grow small" style="min-width:0">${esc(x.info.project || 'Chưa đặt tên')} · ${(x.assets || []).length} thiết bị</span><button class="btn danger" style="min-height:36px;flex:none" data-act="site-lib-del" data-v="${i}">Xóa</button></div>`).join('')}</div>` : ''}
+      <p class="muted small" style="margin:0">Bộ checklist ${esc(CL.version)} · bảo trì ${esc(PM.version)}. Cài lên màn hình chính: Safari → Chia sẻ → "Thêm vào MH chính"; Chrome → ⋮ → "Cài đặt ứng dụng".</p>
       <div class="modal-actions"><button class="btn" data-act="close">Đóng</button><button class="btn primary" data-act="save-settings">Lưu</button></div>`);
   }
   // Hướng dẫn thực hiện của một đầu việc bảo trì: làm gì, cách làm, vì sao, lưu ý, ảnh cần chụp.
@@ -1647,7 +1725,20 @@
       case 'tab': flush(); go('insp', { tab: v }); break;
       case 'sec': go('sec', { sec: v, filter: 'all', q: '' }); break;
       case 'filter': S.filter = v; render(false); break;
-      case 'goto': go('sec', { sec: b.dataset.sec, filter: 'all', q: '', focus: 'it-' + c }); break;
+      case 'goto': $modal.innerHTML = ''; go('sec', { sec: b.dataset.sec, filter: 'all', q: '', focus: 'it-' + c }); break;
+      case 'stat': statModal(v); break;
+      case 'mic': micToggle(c); break;
+      case 'sel-start': S.sel = new Set(); render(false); break;
+      case 'sel-cancel': S.sel = null; render(false); break;
+      case 'sel-all': S.sel = new Set(S.sel.size === S.list.length ? [] : S.list.map((x) => x.id)); render(false); break;
+      case 'sel-toggle': { const id = b.dataset.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); render(false); break; }
+      case 'sel-delete': {
+        const ids = [...S.sel]; if (!ids.length) return;
+        if (!(await ask('Xóa biên bản', `Xóa vĩnh viễn ${ids.length} biên bản đã chọn cùng toàn bộ ảnh trên máy này? Dữ liệu đã đồng bộ lên Lark Base vẫn còn trên Lark.`, 'Xóa', true))) return;
+        for (const id of ids) { for (const ph of await store.photosOf(id)) await store.del('photos', ph.id); await store.del('insp', id); }
+        S.sel = null; toast(`Đã xóa ${ids.length} biên bản`); loadHome(); break;
+      }
+      case 'site-lib-del': { const list = sitesAll(); const gone = list.splice(+v, 1)[0]; lsSet('pvho-sites', list); toast('Đã xóa hồ sơ: ' + ((gone && gone.info.project) || '')); settingsModal(); break; }
       case 'st': {
         const r = R(c);
         r.s = r.s === v ? undefined : v;

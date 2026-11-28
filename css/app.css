@@ -482,3 +482,33 @@ button.link { background: none; border: 0; padding: 4px 2px; color: inherit; fon
 .info-sec h3 { margin: 0 0 3px; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .info-sec p { margin: 0; font-size: 14.5px; line-height: 1.55; }
 .cam-guide { margin: 4px 0 0; font-size: 12px; line-height: 1.4; opacity: .85; }
+
+/* ---------- ô thống kê bấm được, danh sách điều hướng, chọn để xóa, ghi chú bằng giọng nói ---------- */
+button.stat { border: 1px solid var(--line); color: inherit; font: inherit; width: 100%; min-height: 62px; }
+button.stat:disabled { border-color: transparent; opacity: .75; }
+button.stat:not(:disabled):active { background: var(--na-bg); }
+.nav-list { gap: 6px; }
+.nav-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; width: 100%; text-align: left;
+  padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: inherit; min-height: 48px;
+}
+.nav-row .item-code { grid-column: 1; }
+.nav-row .nav-t { grid-column: 1; font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nav-row .chev { grid-column: 2; grid-row: 1 / span 2; }
+.insp-card.picking { position: relative; padding-left: 54px; }
+.pick-box {
+  position: absolute; left: 14px; top: 14px; width: 26px; height: 26px; border: 2px solid var(--muted); border-radius: 7px;
+  display: grid; place-items: center; color: #fff;
+}
+.pick-box svg { width: 18px; height: 18px; }
+.insp-card.picked { border-color: var(--brand-2); }
+.insp-card.picked .pick-box { background: var(--brand-2); border-color: var(--brand-2); }
+.sel-bar {
+  position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; display: flex; gap: 8px; align-items: center;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: var(--surface); border-top: 1px solid var(--line); font-size: 14px; font-weight: 600;
+}
+.sel-bar .btn { min-height: 44px; }
+.btn.mic { align-self: flex-start; min-height: 42px; font-size: 14px; }
+.btn.mic svg { width: 18px; height: 18px; }
+.btn.mic.on { background: var(--nok-bg); border-color: var(--nok); color: var(--nok); }
