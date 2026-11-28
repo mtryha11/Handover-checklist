@@ -72,6 +72,7 @@ h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
 /* ---------- top bar ---------- */
 .topbar {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  transition: transform .22s ease;
   color: var(--brand-ink);
   background:
     linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px) 0 0 / 22px 100%,
@@ -512,3 +513,8 @@ button.stat:not(:disabled):active { background: var(--na-bg); }
 .btn.mic { align-self: flex-start; min-height: 42px; font-size: 14px; }
 .btn.mic svg { width: 18px; height: 18px; }
 .btn.mic.on { background: var(--nok-bg); border-color: var(--nok); color: var(--nok); }
+
+/* thanh tiêu đề tự ẩn khi cuộn xuống; trang chủ: thẻ tạo mới gọn ở cuối */
+.topbar.away { transform: translateY(calc(-100% - env(safe-area-inset-top, 0px))); }
+@media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }
+.new-card { display: flex; flex-direction: column; gap: 10px; }

@@ -112,6 +112,15 @@ chmod 600 .env && node lark-bridge.mjs setup
 logread -e lark -f                                   # xem log
 ```
 
+**Cập nhật cầu nối lên bản mới** (khi app có tính năng đồng bộ mới, ví dụ bảng Thiết bị bảo trì) – chỉ cần tải lại
+một file rồi khởi động lại, file `.env` giữ nguyên:
+
+```sh
+cd /opt/lark-bridge
+wget -O lark-bridge.mjs https://raw.githubusercontent.com/mtryha11/Handover-checklist/main/server/lark-bridge.mjs
+/etc/init.d/lark-bridge restart        # máy chủ Linux thường: sudo systemctl restart lark-bridge
+```
+
 ### 4.3 HTTPS và mở ra Internet
 
 Điện thoại ngoài công trường dùng 4G nên cầu nối phải truy cập được từ Internet qua **HTTPS**. Ví dụ Nginx
@@ -168,7 +177,15 @@ Gói Lark giới hạn số bản ghi (ví dụ 20.000), nên dữ liệu đư�
 | **Biên bản** | 1 đợt kiểm tra | Thông tin dự án, % hoàn thành, Đạt / Không đạt / N/A / Chưa kiểm, tồn tại A/B/C, kết luận; **theo từng Phần A–K**: `% hoàn thành – …`, `Không đạt – …`, `Ảnh – …` (ảnh hiện trường của các hạng mục không có tồn tại); **Biên bản PDF**; **Chi tiết kết quả (Excel)** – đủ mọi hạng mục |
 | **Tồn tại** | 1 hạng mục **Không đạt** | Phần, nhóm, mã, nội dung, mức A/B/C, mô tả, giá trị đo, trách nhiệm, hạn, ảnh, GPS, `Tình trạng khắc phục` (người dùng Lark cập nhật) |
 
+| **Thiết bị bảo trì `<năm>-<quý>`** | 1 thiết bị của 1 đợt bảo trì quý | Dự án, đợt, khu vực, thiết bị, loại, % hoàn thành, Đạt / Không đạt / N/A / Chưa làm, số ảnh; mỗi hạng mục của thiết bị một cặp cột **`HM 01…16`** (mã, nội dung, kết quả, số đo, ghi chú) và **`Ảnh 01…16`** (ảnh của riêng hạng mục đó) |
+
 - Mỗi biên bản dùng **1 + số tồn tại** bản ghi (thường 10–30) → 20.000 bản ghi đủ cho khoảng 700–1.000 biên bản.
+- **Bảo trì quý**: mỗi đợt thêm một dòng cho mỗi thiết bị (dự án 9 inverter khoảng 30 dòng). Ảnh chỉ nằm ở bảng
+  Thiết bị bảo trì, không lặp lại ở bảng Biên bản. Mỗi quý một bảng riêng vì Lark giới hạn **20.000 tệp đính kèm
+  trong một bảng** và **100 tệp trong một ô**; bảng của quý mới do cầu nối tự tạo. Thiết bị có hơn 16 hạng mục thì
+  phần dư nằm ở cột `Hạng mục khác` / `Ảnh khác`.
+- Cầu nối bản cũ (chưa có bảng Thiết bị bảo trì) vẫn dùng được: app tự quay về cách ghi ảnh vào các cột
+  `Ảnh – BT. …` của bảng Biên bản, quá 100 ảnh thì chia sang cột `(2)`, `(3)`.
 - Hạng mục chuyển từ Không đạt sang Đạt / N/A thì dòng Tồn tại của nó tự xóa.
 - Các cột theo Phần do cầu nối tự tạo ở lần đồng bộ đầu tiên.
 - Excel chi tiết và PDF được gửi khi bấm **Lưu PDF vào Lark Base** (tab Biên bản → Xuất PDF).

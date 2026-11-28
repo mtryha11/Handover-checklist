@@ -389,6 +389,13 @@
     else if (S.sel) { S.sel = null; render(false); }
   }
   window.addEventListener('popstate', goBack);
+  // Thanh tiêu đề tự ẩn khi cuộn xuống để nhường chỗ cho nội dung, hiện lại khi cuộn lên.
+  let lastY = 0;
+  window.addEventListener('scroll', () => {
+    const y = window.scrollY; const tb = document.querySelector('.topbar');
+    if (tb) { if (y > lastY + 6 && y > 90) tb.classList.add('away'); else if (y < lastY - 6 || y < 40) tb.classList.remove('away'); }
+    lastY = y;
+  }, { passive: true });
   // Vuốt từ mép trái sang phải để quay lại (ứng dụng cài lên màn hình chính và trong Lark không có nút Back).
   let swipe = null;
   document.addEventListener('touchstart', (e) => {
@@ -473,35 +480,33 @@
 
   /* ----- home ----- */
   function viewHome() {
-    const cards = S.list.map((x) => {
-      cur = x; const n = count(allItems()); cur = null;
+    // Việc đang dở lên trước, trong mỗi nhóm thì cái làm gần nhất lên trước.
+    const rows = S.list.map((x) => { cur = x; const n = count(allItems()); cur = null; return { x, n }; });
+    rows.sort((a, b) => (a.n.none === 0) - (b.n.none === 0) || b.x.updated - a.x.updated);
+    const cards = rows.map(({ x, n }) => {
       const p = PURPOSE[x.info.purpose] || PURPOSE.handover;
       const on = S.sel && S.sel.has(x.id);
       return `<button class="card insp-card ${S.sel ? 'picking' : ''} ${on ? 'picked' : ''}" data-act="${S.sel ? 'sel-toggle' : 'open'}" data-id="${x.id}" ${S.sel ? `aria-pressed="${!!on}"` : ''}>
         ${S.sel ? `<span class="pick-box">${on ? I.check : ''}</span>` : ''}
         <div class="row"><h3 class="grow">${esc(x.info.project || 'Chưa đặt tên')}</h3><span class="chip sun">${n.pct}%</span></div>
-        <div class="insp-meta"><span>${esc(p.label)}${x.info.purpose === 'pm' ? ' · ' + esc(periodLabel(x.info)) : ''}</span><span>${esc(CL.types[x.info.type] || '')}</span>${x.info.dc ? `<span>${esc(x.info.dc)} kWp</span>` : ''}<span>${fmtDate(x.info.date)}</span></div>
+        <div class="insp-meta"><span class="chip ${n.none ? 'sun' : 'ok'}" style="margin-right:2px">${n.none ? 'Đang dở' : 'Đã xong'}</span><span>${esc(p.label)}${x.info.purpose === 'pm' ? ' · ' + esc(periodLabel(x.info)) : ''}</span><span>${esc(CL.types[x.info.type] || '')}</span>${x.info.dc ? `<span>${esc(x.info.dc)} kWp</span>` : ''}<span>${fmtDate(x.info.date)}</span></div>
         ${bar(n)}
         <div class="chips"><span class="chip ok">${n.ok} đạt</span><span class="chip nok">${n.nok} không đạt</span>${n.A ? `<span class="chip nok">${n.A} mức A</span>` : ''}<span class="chip">${n.none} chưa kiểm</span></div>
       </button>`;
     }).join('');
     return `${topbar({ title: 'Raitek O&M', sub: 'Bảo trì quý và nhận bàn giao điện mặt trời', back: false, actions: `<button class="icon-btn" data-act="settings" aria-label="Cài đặt">${I.gear}</button>` })}
     <main class="wrap no-tabs">
-      <section class="card hero-card">
-        <h2>Bảo trì bảo dưỡng định kỳ quý</h2>
-        <p class="muted small" style="margin:0">${PM.countTasks()} đầu việc theo ${PM.kinds.length} loại thiết bị, nhân ra cho từng inverter, tủ điện, khu mái của dự án và xếp theo lộ trình đi. Mỗi đầu việc có hướng dẫn chụp ảnh và cách làm; thiết bị nào chưa xong hiện ngay trên danh sách.</p>
-        <button class="btn sun block" data-act="new-pm">${I.plus} Tạo đợt bảo trì quý</button>
-      </section>
-      <section class="card hero-card">
-        <h2>Nhận bàn giao / audit hiện trạng</h2>
-        <p class="muted small" style="margin:0">${CL.sections.filter((s) => s.items.some((i) => !i.x)).length} nhóm, ${CL.sections.reduce((a, s) => a + s.items.filter((i) => !i.x).length, 0)} hạng mục theo form đánh giá chất lượng công trình: thang, lan can, sàn thao tác, tấm pin, rail, trạm thời tiết, tiếp địa, nước vệ sinh, nhà inverter, inverter, cáp, máng cáp, tủ điện, giám sát, biển báo, PCCC, trạm biến áp, hồ sơ. Ảnh chụp được đóng dấu mã hạng mục và thời gian.</p>
-        <button class="btn block" data-act="new">${I.plus} Tạo biên bản bàn giao / audit</button>
-      </section>
-      <div class="row"><span class="eyebrow grow">Biên bản đã lưu (${S.list.length})</span>
+      <div class="row"><span class="eyebrow grow">Công việc gần đây (${S.list.length})</span>
         ${S.list.length && !S.sel ? `<button class="btn ghost" style="min-height:38px;font-size:13px" data-act="sel-start">${I.trash} Chọn để xóa</button>` : ''}
         <label class="btn ghost" style="min-height:38px;font-size:13px">${I.upload} Nhập file sao lưu / hồ sơ<input type="file" accept=".json,application/json" data-import hidden></label></div>
       ${S.sel ? `<div class="sel-bar"><button class="btn" data-act="sel-cancel">Hủy</button><span class="grow">Đã chọn ${S.sel.size}/${S.list.length}</span><button class="btn" data-act="sel-all">Chọn hết</button><button class="btn danger" data-act="sel-delete" ${S.sel.size ? '' : 'disabled'}>${I.trash} Xóa</button></div>` : ''}
-      ${cards || `<div class="card empty">${I.doc}<p>Chưa có biên bản nào trên máy này.</p><div class="btn-grid"><button class="btn" data-act="demo-pm">Ví dụ bảo trì quý</button><button class="btn" data-act="demo">Ví dụ bàn giao</button></div></div>`}
+      ${cards || `<div class="card empty">${I.doc}<p>Chưa có công việc nào trên máy này. Tạo mới ở bên dưới.</p><div class="btn-grid"><button class="btn" data-act="demo-pm">Ví dụ bảo trì quý</button><button class="btn" data-act="demo">Ví dụ bàn giao</button></div></div>`}
+      <div class="eyebrow">Tạo mới</div>
+      <section class="card pad new-card">
+        <button class="btn sun block" data-act="new-pm">${I.plus} Đợt bảo trì quý</button>
+        <button class="btn block" data-act="new">${I.plus} Biên bản bàn giao / audit</button>
+        <p class="muted small" style="margin:0">Bảo trì quý: ${PM.countTasks()} đầu việc theo ${PM.kinds.length} loại thiết bị, nhân ra cho từng thiết bị của dự án. Bàn giao / audit: ${CL.sections.reduce((a, sc) => a + sc.items.filter((i) => !i.x).length, 0)} hạng mục theo form đánh giá chất lượng công trình.</p>
+      </section>
       ${!store.db ? '<p class="note-box">Trình duyệt đang chặn bộ nhớ lưu trữ. Dữ liệu chỉ tồn tại tới khi đóng trang – hãy xuất file sao lưu.</p>' : ''}
       <p class="muted small" style="text-align:center">Dữ liệu chỉ lưu trên điện thoại này. Xuất file sao lưu (.json) để chuyển máy hoặc lưu trữ.</p>
       ${S.sel ? '<div style="height:84px"></div>' : ''}
@@ -1433,6 +1438,10 @@
       let L = insp.lark;
       if (!L || L.v !== 2) L = insp.lark = { v: 2, rec: (L && L.rec) || '', pdf: (L && L.pdf) || '', xlsx: (L && L.xlsx) || '', items: {} };
       const f = insp.info, all = allItems(), n = count(all);
+      // Cầu nối bản mới có bảng "Thiết bị bảo trì": mỗi thiết bị một dòng, mỗi hạng mục một cặp cột nội dung + ảnh.
+      if (!sync.me || Date.now() - sync.meAt > 600000 || sync.meUrl !== settings.larkUrl) { sync.me = await larkApi('/api/me'); sync.meAt = Date.now(); sync.meUrl = settings.larkUrl; }
+      const slots = +sync.me.devSlots || 0;
+      const useDev = isPM(insp) && (sync.me.features || []).includes('devices') && slots > 0;
       // Chụp lại danh sách nhóm ngay từ đầu: người dùng có thể rời biên bản khi đang đồng bộ.
       const secMap = new Map(SECS().map((sc) => [sc.id, sc]));
       // 1) Ảnh: tải lên từng ảnh mới (của mọi hạng mục)
@@ -1471,7 +1480,8 @@
         sum[kp] = c.pct; sum[kn] = c.nok;
         types[kp] = 'number'; types[kn] = 'number';
         // Lark Base nhận tối đa 100 file trong một ô: quá 100 ảnh thì chia sang cột "(2)", "(3)"…
-        const tk = its.filter((it) => (insp.res[it.c] || {}).s !== 'nok').flatMap(toksOf);
+        // Đã có bảng thiết bị thì không lặp lại ảnh ở dòng Biên bản (mỗi bảng Lark chỉ chứa được 20.000 file).
+        const tk = useDev ? [] : its.filter((it) => (insp.res[it.c] || {}).s !== 'nok').flatMap(toksOf);
         const parts = Math.max(1, Math.ceil(tk.length / LARK_CELL), (L.cols && L.cols[label]) || 1);
         for (let k = 0; k < parts; k++) { const name = k ? `${ka} (${k + 1})` : ka; sum[name] = tk.slice(k * LARK_CELL, (k + 1) * LARK_CELL); types[name] = 'attachment'; }
         (L.cols = L.cols || {})[label] = parts;
@@ -1480,6 +1490,42 @@
       if (!L.rec || L.sumH !== sh) {
         const d = await larkApi('/api/sync/inspection', { inspId: insp.id, recordId: L.rec || '', data: sum, types });
         L.rec = d.recordId; L.sumH = sh; await save();
+      }
+      // 2b) Bảng Thiết bị bảo trì: mỗi thiết bị một dòng
+      if (useDev) {
+        L.dev = L.dev || {};
+        const period = [f.year, f.period].filter(Boolean).join('-');
+        const rows = [], keys = [];
+        for (const sec of secMap.values()) {
+          const its = all.filter((it) => it.secId === sec.id); if (!its.length) continue;
+          const c = count(its); const key = `${insp.id}|${sec.id}`; keys.push(key);
+          const data = {
+            'Dự án': f.project, 'Đợt': periodLabel(f), 'Khu vực': `${sec.part}. ${sec.partTitle}`, 'Thiết bị': `${sec.id} · ${sec.title}`,
+            'Loại thiết bị': (PM.kindOf(sec.kind) || {}).title || '', 'Mô tả': sec.sub || '', 'Hoàn thành (%)': c.pct, 'Đạt': c.ok, 'Không đạt': c.nok,
+            'N/A': c.na, 'Chưa làm': c.none, 'Ngày thực hiện': f.date, 'Người thực hiện': f.inspector
+          };
+          let nph = 0; const moreT = [], moreP = [];
+          its.forEach((it, i) => {
+            const r = insp.res[it.c] || {}; const toks = toksOf(it); nph += toks.length;
+            const line = [`${it.c} · ${it.t}`, [r.s ? ST[r.s] : 'Chưa làm', r.s === 'nok' ? `mức ${r.sev || 'B'}` : '', r.val ? `${r.val} ${it.u || ''}`.trim() : ''].filter(Boolean).join(' · '), noteOf(it, r)].filter(Boolean).join('\n');
+            if (i < slots) { data[`HM ${pad2(i + 1)}`] = line; data[`Ảnh ${pad2(i + 1)}`] = toks.slice(0, LARK_CELL); }
+            else { moreT.push(line); moreP.push(...toks); }
+          });
+          for (let i = its.length; i < slots; i++) { data[`HM ${pad2(i + 1)}`] = ''; data[`Ảnh ${pad2(i + 1)}`] = []; }
+          data['Hạng mục khác'] = moreT.join('\n\n'); data['Ảnh khác'] = moreP.slice(0, LARK_CELL); data['Số ảnh'] = nph;
+          const h = hashOf(JSON.stringify(data)); const ld = L.dev[sec.id] = L.dev[sec.id] || { rec: '', h: '' };
+          if (!ld.rec || ld.h !== h) rows.push({ id: sec.id, h, key, recordId: ld.rec, data });
+        }
+        Object.keys(L.dev).forEach((id) => { if (!secMap.has(id)) delete L.dev[id]; });
+        // Danh mục thiết bị đổi (thêm / xóa thiết bị): gửi kèm danh sách khóa để cầu nối xóa các dòng thừa.
+        const kh = hashOf(keys.join(',')); const prune = L.devKeys !== kh;
+        for (let i = 0; i < rows.length || (prune && i === 0); i += 10) {
+          const chunk = rows.slice(i, i + 10); const lastCall = i + 10 >= rows.length;
+          const d = await larkApi('/api/sync/devices', { inspId: insp.id, period, rows: chunk.map(({ key, recordId, data }) => ({ key, recordId, data })), keep: prune && lastCall ? keys : undefined });
+          chunk.forEach((x) => { const rec = d.ids && d.ids[x.key]; if (rec) { L.dev[x.id].rec = rec; L.dev[x.id].h = x.h; } });
+          await save();
+        }
+        L.devKeys = kh; await save();
       }
       // 3) Bảng Tồn tại: chỉ hạng mục Không đạt; hạng mục hết "Không đạt" thì xóa dòng
       const changed = [], gone = [];

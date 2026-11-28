@@ -81,6 +81,17 @@ const SCHEMA = {
     ]
   }
 };
+// Bảng "Thiết bị bảo trì <kỳ>" (bảo trì quý): mỗi thiết bị một dòng; mỗi hạng mục của thiết bị một cặp cột
+// "HM nn" (mã, nội dung, kết quả, số đo, ghi chú) và "Ảnh nn" (ảnh của riêng hạng mục đó). Mỗi kỳ một bảng
+// riêng vì Lark Base giới hạn 20.000 tệp đính kèm trong một bảng.
+const DEV_SLOTS = 16;
+const DEV_FIELDS = [
+  ['Khóa', 'text'], ['Mã biên bản', 'text'], ['Dự án', 'text'], ['Đợt', 'text'], ['Khu vực', 'text'], ['Thiết bị', 'text'], ['Loại thiết bị', 'text'], ['Mô tả', 'text'],
+  ['Hoàn thành (%)', 'number'], ['Đạt', 'number'], ['Không đạt', 'number'], ['N/A', 'number'], ['Chưa làm', 'number'], ['Số ảnh', 'number'],
+  ['Ngày thực hiện', 'date'], ['Người thực hiện', 'text'],
+  ...Array.from({ length: DEV_SLOTS }, (_, i) => { const n = String(i + 1).padStart(2, '0'); return [[`HM ${n}`, 'text'], [`Ảnh ${n}`, 'attachment']]; }).flat(),
+  ['Hạng mục khác', 'text'], ['Ảnh khác', 'attachment'], ['Người đồng bộ', 'text'], ['Cập nhật lúc', 'date']
+];
 // Kiểu của từng cột đang có trên Base (đọc khi khởi động; cập nhật khi tạo cột mới).
 const ftypes = { insp: new Map(), items: new Map() };
 const TYPE_NAME = { 1: 'text', 2: 'number', 3: 'select', 5: 'date', 17: 'attachment', 18: 'link' };
@@ -180,8 +191,9 @@ async function ensureFields(key, types) {
 /* ---------------- chuyển dữ liệu app → giá trị trường Lark ---------------- */
 function toLark(tbl, data, { forUpdate }) {
   const out = {};
+  const types = tbl instanceof Map ? tbl : ftypes[tbl];
   for (const [name, val] of Object.entries(data || {})) {
-    const type = ftypes[tbl].get(name);
+    const type = types.get(name);
     if (!type || type === 'other' || name === 'Tình trạng khắc phục') continue;
     const empty = val === null || val === undefined || val === '' || (Array.isArray(val) && !val.length);
     if (empty) { if (forUpdate && type !== 'link') out[name] = null; continue; }
@@ -206,6 +218,45 @@ async function searchKeys(tableId, field, value, keyField) {
     page = d.has_more ? d.page_token : '';
   } while (page);
   return map;
+}
+
+/* ---------------- bảng thiết bị bảo trì theo kỳ ---------------- */
+const devTables = new Map(); // tên bảng -> { id, name, types }
+function devTableName(period) {
+  const p = String(period || '').replace(/[^0-9A-Za-z_-]/g, '').slice(0, 20);
+  return p ? `Thiết bị bảo trì ${p}` : 'Thiết bị bảo trì';
+}
+async function ensureDevTable(period) {
+  await ensureTables();
+  const name = devTableName(period);
+  if (devTables.has(name)) return devTables.get(name);
+  return serial('devtable:' + name, async () => {
+    if (devTables.has(name)) return devTables.get(name);
+    const fieldBody = ensureTables.fieldBody;
+    const types = new Map();
+    let id = '', page = '';
+    do {
+      const d = await lark('GET', `/open-apis/bitable/v1/apps/${CFG.base}/tables?page_size=100${page ? `&page_token=${page}` : ''}`);
+      const hit = (d.items || []).find((t) => t.name === name); if (hit) { id = hit.table_id; break; }
+      page = d.has_more ? d.page_token : '';
+    } while (page);
+    if (id) {
+      page = '';
+      do {
+        const d = await lark('GET', `/open-apis/bitable/v1/apps/${CFG.base}/tables/${id}/fields?page_size=100${page ? `&page_token=${page}` : ''}`);
+        (d.items || []).forEach((f) => types.set(f.field_name, TYPE_NAME[f.type] || 'other')); page = d.has_more ? d.page_token : '';
+      } while (page);
+      for (const f of DEV_FIELDS) {
+        if (!types.has(f[0])) { await lark('POST', `/open-apis/bitable/v1/apps/${CFG.base}/tables/${id}/fields`, fieldBody(f)); types.set(f[0], f[1]); }
+      }
+    } else {
+      const d = await lark('POST', `/open-apis/bitable/v1/apps/${CFG.base}/tables`, { table: { name, default_view_name: 'Tất cả', fields: DEV_FIELDS.map(fieldBody) } });
+      id = d.table_id; DEV_FIELDS.forEach((f) => types.set(f[0], f[1])); log(`+ bảng "${name}" (${id})`);
+    }
+    const t = { id, name, types };
+    devTables.set(name, t);
+    return t;
+  });
 }
 
 /* ---------------- phiên đăng nhập (token ký HMAC) ---------------- */
@@ -292,7 +343,7 @@ const routes = {
     redirect(res, `${st.r}#lark_token=${tok}`);
   },
 
-  'GET /api/me': async ({ user }) => ({ name: user.name, open_id: user.oid, base: CFG.base ? `${CFG.open.replace('open.', '')}/base/${CFG.base}` : '' }),
+  'GET /api/me': async ({ user }) => ({ name: user.name, open_id: user.oid, base: CFG.base ? `${CFG.open.replace('open.', '')}/base/${CFG.base}` : '', features: ['devices'], devSlots: DEV_SLOTS }),
 
   // Tạo / cập nhật 1 dòng trong bảng "Biên bản".
   'POST /api/sync/inspection': async ({ body, user }) => {
@@ -350,6 +401,48 @@ const routes = {
         (d.records || []).forEach((r, k) => { out[chunk[k].key] = r.record_id; });
       }
       return { ids: out };
+    });
+  },
+
+  // Bảo trì quý: tạo / cập nhật các dòng thiết bị trong bảng "Thiết bị bảo trì <kỳ>".
+  // body.keep (nếu có) = toàn bộ khóa còn hiệu lực của biên bản; dòng nào không nằm trong đó sẽ bị xóa.
+  'POST /api/sync/devices': async ({ body, user }) => {
+    const t = await ensureDevTable(body.period);
+    const rows = (body.rows || []).slice(0, 200);
+    const api = `/open-apis/bitable/v1/apps/${CFG.base}/tables/${t.id}/records`;
+    return serial(t.id, async () => {
+      const out = {};
+      const needKeys = rows.some((x) => !x.recordId) || Array.isArray(body.keep);
+      const known = needKeys ? await searchKeys(t.id, 'Mã biên bản', body.inspId, 'Khóa') : {};
+      const full = (x) => Object.assign({}, x.data, { 'Khóa': x.key, 'Mã biên bản': body.inspId, 'Người đồng bộ': user.name, 'Cập nhật lúc': Date.now() });
+      const create = async (list) => {
+        for (let i = 0; i < list.length; i += 50) {
+          const chunk = list.slice(i, i + 50);
+          const d = await lark('POST', `${api}/batch_create`, { records: chunk.map((x) => ({ fields: toLark(t.types, full(x), { forUpdate: false }) })) });
+          (d.records || []).forEach((r, k) => { out[chunk[k].key] = r.record_id; });
+        }
+      };
+      const upd = [], crt = [];
+      for (const x of rows) { const rec = x.recordId || known[x.key]; if (rec) upd.push(Object.assign({ rec }, x)); else crt.push(x); }
+      for (let i = 0; i < upd.length; i += 50) {
+        const chunk = upd.slice(i, i + 50);
+        try {
+          await lark('POST', `${api}/batch_update`, { records: chunk.map((x) => ({ record_id: x.rec, fields: toLark(t.types, full(x), { forUpdate: true }) })) });
+          chunk.forEach((x) => { out[x.key] = x.rec; });
+        } catch (e) {
+          if (e.code !== 1254043 && !/RecordIdNotFound|not ?found/i.test(e.message)) throw e;
+          await create(chunk); // dòng đã bị xóa trên Lark → tạo lại
+        }
+      }
+      await create(crt);
+      if (Array.isArray(body.keep)) {
+        const keep = new Set(body.keep);
+        const gone = Object.entries(known).filter(([k]) => !keep.has(k)).map(([, id]) => id);
+        for (let i = 0; i < gone.length; i += 100) {
+          try { await lark('POST', `${api}/batch_delete`, { records: gone.slice(i, i + 100) }); } catch (e) { if (e.code !== 1254043) throw e; }
+        }
+      }
+      return { ids: out, table: t.name };
     });
   },
 
