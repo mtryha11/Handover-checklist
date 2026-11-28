@@ -31,12 +31,16 @@ const CFG = {
   origins: (process.env.ALLOWED_ORIGINS || 'https://mtryha11.github.io').split(',').map((s) => s.trim()).filter(Boolean),
   sessionSecret: process.env.SESSION_SECRET || '',
   sessionDays: +(process.env.SESSION_DAYS || 30),
-  // Chuyển ghi âm thành chữ (Whisper qua API tương thích OpenAI). Không có STT_API_KEY thì tính năng tắt.
-  sttKey: process.env.STT_API_KEY || '',
-  sttUrl: process.env.STT_URL || 'https://api.openai.com/v1/audio/transcriptions',
-  sttModel: process.env.STT_MODEL || 'whisper-1',
+  // Chuyển ghi âm ghi chú thành chữ. Không có STT_API_KEY thì tính năng tắt.
+  // STT_PROVIDER=elevenlabs (mặc định, mô hình Scribe) hoặc openai (Whisper / dịch vụ tương thích OpenAI).
+  sttKey: process.env.STT_API_KEY || process.env.ELEVENLABS_API_KEY || '',
+  sttProvider: (process.env.STT_PROVIDER || 'elevenlabs').toLowerCase(),
+  sttUrl: process.env.STT_URL || '',
+  sttModel: process.env.STT_MODEL || '',
   sttLang: process.env.STT_LANGUAGE || 'vi',
-  sttPrompt: process.env.STT_PROMPT || 'Ghi chú bảo trì hệ thống điện mặt trời. Thuật ngữ: inverter, string, MPPT, PV1, PV2, MC4, DC switch, ACB, MCCB, MCB, SPD, tủ MSB, tủ DB, busbar, đầu cốt, cáp DC, cáp AC, máng cáp, tiếp địa, rail, kẹp giữa, kẹp biên, chân L, tấm pin, hotspot, diode bypass, quạt tản nhiệt, logger, router, UPS, megaohm, ampe kìm, kWh, kWp.'
+  // Thuật ngữ chuyên ngành để mô hình viết đúng (cách nhau bằng dấu phẩy).
+  sttTerms: (process.env.STT_KEYTERMS || 'inverter, string, MPPT, MC4, DC switch, ACB, MCCB, MCB, SPD, tủ MSB, tủ DB, busbar, đầu cốt, cáp DC, cáp AC, máng cáp, tiếp địa, rail, kẹp giữa, kẹp biên, chân L, tấm pin, hotspot, diode bypass, quạt tản nhiệt, logger, router, UPS, megaohm, ampe kìm, kWh, kWp, PV1, PV2')
+    .split(',').map((x) => x.trim()).filter(Boolean).slice(0, 100)
 };
 // Chấp nhận cả token lẫn nguyên đường dẫn Base (…/base/<token>?table=…&view=…): chỉ lấy phần token.
 function baseToken(raw) {
@@ -279,6 +283,7 @@ async function mediaDownload(token, hint) {
   }
   return { buf: Buffer.from(await r.arrayBuffer()), mime: (r.headers.get('content-type') || 'application/octet-stream').split(';')[0] };
 }
+let sttGood = null; // [mô hình, có kèm thuật ngữ] đã gọi thành công
 const cellText = (v) => (Array.isArray(v) ? v.map((x) => (x && x.text) || (typeof x === 'string' ? x : '')).join('') : v == null ? '' : String(v));
 
 /* ---------------- phiên đăng nhập (token ký HMAC) ---------------- */
@@ -404,17 +409,46 @@ const routes = {
     if (buf.length > 24 * 1024 * 1024) throw new LarkError('Ghi âm lớn hơn 24 MB', 413, 413);
     const mime = String(body.mime || 'audio/webm').split(';')[0].toLowerCase();
     const ext = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'm4a', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg' }[mime] || 'webm';
-    const fd = new FormData();
-    fd.append('file', new Blob([buf], { type: mime }), `ghi-chu.${ext}`);
-    fd.append('model', CFG.sttModel); fd.append('response_format', 'json'); fd.append('temperature', '0');
-    if (CFG.sttLang) fd.append('language', CFG.sttLang);
-    if (CFG.sttPrompt) fd.append('prompt', CFG.sttPrompt);
-    let r;
-    try { r = await fetch(CFG.sttUrl, { method: 'POST', headers: { Authorization: `Bearer ${CFG.sttKey}` }, body: fd, signal: AbortSignal.timeout(90000) }); }
-    catch (e) { throw new LarkError('Không gọi được dịch vụ chuyển giọng nói: ' + e.message, 502, 502); }
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new LarkError(`Dịch vụ chuyển giọng nói báo lỗi: ${(j.error && (j.error.message || j.error)) || 'HTTP ' + r.status}`, 502, 502);
-    return { text: String(j.text || '').trim() };
+    const file = () => [new Blob([buf], { type: mime }), `ghi-chu.${ext}`];
+    const call = async (url, headers, fd) => {
+      let r;
+      try { r = await fetch(url, { method: 'POST', headers, body: fd, signal: AbortSignal.timeout(90000) }); }
+      catch (e) { throw new LarkError('Không gọi được dịch vụ chuyển giọng nói: ' + e.message, 502, 502); }
+      const j = await r.json().catch(() => ({}));
+      const d = j.detail || j.error || {};
+      return { ok: r.ok, status: r.status, text: String(j.text || '').trim(), msg: (typeof d === 'string' ? d : d.message || d.status) || 'HTTP ' + r.status };
+    };
+    const fail = (x) => { throw new LarkError(`Dịch vụ chuyển giọng nói báo lỗi: ${x.msg}`, 502, 502); };
+
+    if (CFG.sttProvider === 'openai') {
+      const fd = new FormData();
+      fd.append('file', ...file()); fd.append('model', CFG.sttModel || 'whisper-1'); fd.append('response_format', 'json'); fd.append('temperature', '0');
+      if (CFG.sttLang) fd.append('language', CFG.sttLang);
+      if (CFG.sttTerms.length) fd.append('prompt', 'Ghi chú bảo trì hệ thống điện mặt trời. Thuật ngữ: ' + CFG.sttTerms.join(', ') + '.');
+      const x = await call(CFG.sttUrl || 'https://api.openai.com/v1/audio/transcriptions', { Authorization: `Bearer ${CFG.sttKey}` }, fd);
+      if (!x.ok) fail(x);
+      return { text: x.text };
+    }
+
+    // ElevenLabs Scribe. Thử lần lượt: mô hình đã cấu hình kèm thuật ngữ → không kèm thuật ngữ → mô hình đời trước,
+    // vì không phải mô hình / gói nào cũng nhận danh sách thuật ngữ.
+    const url = CFG.sttUrl || 'https://api.elevenlabs.io/v1/speech-to-text';
+    const models = [...new Set([CFG.sttModel || 'scribe_v3', 'scribe_v2', 'scribe_v1'])];
+    let tries = models.flatMap((m) => [[m, true], [m, false]]);
+    if (sttGood) tries = [sttGood].concat(tries.filter(([m, t]) => m !== sttGood[0] || t !== sttGood[1])); // cách đã chạy được lần trước
+    let last = null;
+    for (const [model, terms] of tries) {
+      if (terms && !CFG.sttTerms.length) continue;
+      const fd = new FormData();
+      fd.append('file', ...file()); fd.append('model_id', model); fd.append('tag_audio_events', 'false');
+      if (CFG.sttLang) fd.append('language_code', CFG.sttLang);
+      if (terms) CFG.sttTerms.forEach((t) => fd.append('keyterms', t));
+      last = await call(url, { 'xi-api-key': CFG.sttKey }, fd);
+      if (last.ok) { if (!sttGood || sttGood[0] !== model || sttGood[1] !== terms) { sttGood = [model, terms]; log(`STT: dùng ${model}${terms ? ' kèm thuật ngữ' : ''}`); } return { text: last.text }; }
+      if ([401, 402, 403, 429].includes(last.status) || last.status >= 500) break; // sai khóa, hết hạn mức, quá tải: thử tiếp cũng vô ích
+      log(`STT: ${model}${terms ? ' + thuật ngữ' : ''} bị từ chối (${last.msg}), thử cách khác`);
+    }
+    fail(last);
   },
 
   // Tạo / cập nhật 1 dòng trong bảng "Biên bản".

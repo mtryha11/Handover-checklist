@@ -184,21 +184,23 @@ khi bấm **Đồng bộ ngay**, và tự động trong lúc làm).
   cấp thêm cho ứng dụng quyền xem / tải tệp (ví dụ `drive:drive:readonly`) rồi phát hành lại phiên bản ứng dụng.
 - Cần có mạng để tải về và để đẩy lên. Mất mạng thì app vẫn làm việc bình thường, có mạng sẽ tự đồng bộ.
 
-## Ghi chú bằng giọng nói (Whisper)
+## Ghi chú bằng giọng nói (ElevenLabs)
 
-Thêm vào file `.env` của cầu nối rồi khởi động lại:
+Thêm khóa API ElevenLabs vào file `.env` của cầu nối rồi khởi động lại:
 
 ```sh
-STT_API_KEY=<khóa API của dịch vụ Whisper>
-# Mặc định gọi OpenAI. Nhà cung cấp khác tương thích OpenAI thì thêm:
-# STT_URL=https://api.openai.com/v1/audio/transcriptions
-# STT_MODEL=whisper-1
+STT_API_KEY=<khóa API ElevenLabs>
 ```
 
 Trong app, dưới ô ghi chú của mỗi hạng mục có nút **Nói để ghi chú**: bấm để ghi âm, bấm lần nữa để dừng (tối đa
-2 phút mỗi lần). Ghi âm được gửi qua cầu nối tới Whisper kèm danh sách thuật ngữ điện mặt trời (sửa bằng biến
-`STT_PROMPT`), chữ trả về được nối vào ghi chú. Mất mạng thì ghi âm được giữ trên máy và tự chuyển thành chữ ở lần
-đồng bộ sau. Khóa API chỉ nằm trên máy chủ, không nằm trong app.
+2 phút mỗi lần). Ghi âm được gửi qua cầu nối tới ElevenLabs (mô hình Scribe, tiếng Việt) kèm danh sách thuật ngữ điện
+mặt trời, chữ trả về được nối vào ghi chú. Mất mạng thì ghi âm được giữ trên máy và tự chuyển thành chữ ở lần đồng bộ
+sau. Khóa API chỉ nằm trên máy chủ, không nằm trong app.
+
+- Đổi mô hình: `STT_MODEL=…` (mặc định `scribe_v3`; mô hình không nhận thì cầu nối tự thử `scribe_v2` rồi `scribe_v1`).
+- Sửa danh sách thuật ngữ: `STT_KEYTERMS=inverter, string, MC4, …` (tối đa 100). Mô hình không nhận thuật ngữ thì
+  cầu nối tự gửi lại không kèm.
+- Dùng Whisper / dịch vụ tương thích OpenAI: `STT_PROVIDER=openai` và `STT_MODEL=whisper-1`.
 
 ## Dữ liệu được đồng bộ (tiết kiệm bản ghi)
 

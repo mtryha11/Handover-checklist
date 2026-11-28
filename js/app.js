@@ -181,6 +181,8 @@
   /* ---------------- state ---------------- */
   const settings = Object.assign({ inspector: '', om: '', theme: 'system', geoStamp: true }, lsGet('pvho-settings', {}));
   if (!settings.dev) { settings.dev = uid(); lsSet('pvho-settings', settings); }
+  // Địa chỉ máy chủ đồng bộ mặc định (js/config.js): máy nào cài ứng dụng cũng đăng nhập Lark được ngay.
+  if (!settings.larkUrl && window.APP_CONFIG && window.APP_CONFIG.larkUrl) settings.larkUrl = String(window.APP_CONFIG.larkUrl).trim().replace(/\/$/, '');
   const S = { view: 'home', tab: 'check', sec: null, filter: 'all', q: '', list: [], isNew: false, focus: null, sel: null };
   let cur = null;            // inspection đang mở
   const photoCache = new Map(); // ảnh gốc (chỉ dùng khi xem từng ảnh và khi xuất file)
@@ -508,8 +510,9 @@
         <div class="chips"><span class="chip ok">${n.ok} đạt</span><span class="chip nok">${n.nok} không đạt</span>${n.A ? `<span class="chip nok">${n.A} mức A</span>` : ''}<span class="chip">${n.none} chưa kiểm</span></div>
       </button>`;
     }).join('');
-    return `${topbar({ title: 'Raitek O&M', sub: 'Bảo trì quý và nhận bàn giao điện mặt trời', back: false, actions: `<button class="icon-btn" data-act="settings" aria-label="Cài đặt">${I.gear}</button>` })}
+    return `${topbar({ title: 'Raitek O&M', back: false, actions: `<button class="icon-btn" data-act="settings" aria-label="Cài đặt">${I.gear}</button>` })}
     <main class="wrap no-tabs">
+      ${loginHTML()}
       <div class="row"><span class="eyebrow grow">Công việc gần đây (${S.list.length})</span>
         ${S.list.length && !S.sel ? `<button class="btn ghost" style="min-height:38px;font-size:13px" data-act="sel-start">${I.trash} Chọn để xóa</button>` : ''}
         <label class="btn ghost" style="min-height:38px;font-size:13px">${I.upload} Nhập file sao lưu / hồ sơ<input type="file" accept=".json,application/json" data-import hidden></label></div>
@@ -528,6 +531,15 @@
     </main>`;
   }
 
+  // Đăng nhập Lark ngay ở trang chủ (ứng dụng cài ở màn hình chính có bộ nhớ riêng nên phải đăng nhập riêng).
+  function loginHTML() {
+    if (ARTIFACT) return '';
+    if (settings.larkToken) return `<div class="row"><span class="chip ok">Lark: ${esc(settings.larkUser || 'đã đăng nhập')}</span><span class="muted small grow">đồng bộ và thấy công việc của cả nhóm</span></div>`;
+    return `<section class="card pad login-card">
+      <div><b>Đăng nhập Lark</b><p class="muted small" style="margin:2px 0 0">Để đồng bộ lên Lark Base, làm tiếp công việc của cả nhóm trên máy này và ghi chú bằng giọng nói.</p></div>
+      ${settings.larkUrl ? '' : '<input class="inp" id="home-lark" inputmode="url" autocapitalize="off" autocomplete="url" placeholder="Địa chỉ máy chủ đồng bộ (https://…)" aria-label="Địa chỉ máy chủ đồng bộ Lark">'}
+      <button class="btn primary block" data-act="lark-login">Đăng nhập Lark</button></section>`;
+  }
   // Công việc của cả nhóm đang có trên Lark mà máy này chưa có.
   function remoteHTML() {
     if (!S.remote || !larkReady()) return '';
@@ -749,7 +761,7 @@
     const same = mic.c === c; const was = mic.rec;
     if (was) { mic.rec = null; mic.on = false; try { was.stop(); } catch (e) { /* ignore */ } micBtn(mic.c, false); mic.c = null; if (same) return; }
     if (vrec.busy) return;
-    // Ưu tiên ghi âm rồi chuyển thành chữ bằng Whisper (qua cầu nối). Cầu nối chưa bật thì dùng cách của trình duyệt.
+    // Ưu tiên ghi âm rồi chuyển thành chữ bằng mô hình trên máy chủ (qua cầu nối). Cầu nối chưa bật thì dùng cách của trình duyệt.
     if (canRecord && larkReady()) {
       if (!sync.me && navigator.onLine !== false) { try { await loadMe(); } catch (e) { /* chưa biết: cứ ghi âm, chuyển sau */ } }
       if (!sync.me || feat('stt')) { vrecStart(c); return; }
@@ -1596,7 +1608,7 @@
     } catch (e) { /* không có mạng hoặc cầu nối bản cũ: bỏ qua */ }
   }
 
-  /* ---------------- ghi chú bằng giọng nói: ghi âm rồi chuyển thành chữ bằng Whisper qua cầu nối ---------------- */
+  /* ---------------- ghi chú bằng giọng nói: ghi âm rồi chuyển thành chữ qua cầu nối (ElevenLabs Scribe) ---------------- */
   const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder) && !ARTIFACT;
   const vrec = { mr: null, c: null, stream: null, chunks: [], t0: 0, tick: null, busy: null };
   const micLabel = (c) => (vrec.c === c && vrec.mr ? `Đang ghi âm ${fmtSec(Date.now() - vrec.t0)} · bấm để dừng` : vrec.busy === c ? 'Đang chuyển thành chữ…' : mic.c === c ? 'Đang nghe… bấm để dừng' : 'Nói để ghi chú');
@@ -2109,8 +2121,8 @@
         break;
       }
       case 'lark-login': {
-        const inp = document.getElementById('s-lark');
-        if (inp) { settings.larkUrl = inp.value.trim().replace(/\/$/, ''); lsSet('pvho-settings', settings); }
+        const inp = document.getElementById('s-lark') || document.getElementById('home-lark');
+        if (inp) { let u = inp.value.trim().replace(/\/$/, ''); if (u && !/^https?:\/\//i.test(u)) u = 'https://' + u; settings.larkUrl = u; lsSet('pvho-settings', settings); }
         if (!settings.larkUrl) { toast('Nhập địa chỉ máy chủ đồng bộ trước'); break; }
         flush(); larkLogin(); break;
       }

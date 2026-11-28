@@ -518,3 +518,14 @@ button.stat:not(:disabled):active { background: var(--na-bg); }
 .topbar.away { transform: translateY(calc(-100% - env(safe-area-inset-top, 0px))); }
 @media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }
 .new-card { display: flex; flex-direction: column; gap: 10px; }
+
+/* thanh tiêu đề gọn một dòng: tên và dòng phụ nằm cùng hàng */
+.topbar-in { min-height: 44px; padding-block: 2px; gap: 4px; }
+.topbar .ttl { display: flex; align-items: baseline; gap: 8px; }
+.topbar .ttl h1 { font-size: 15px; flex: 0 1 auto; min-width: 0; }
+.topbar .ttl p { flex: 1 1 0; min-width: 0; font-size: 11.5px; }
+.topbar .icon-btn { width: 40px; height: 40px; }
+.topbar .icon-btn svg { width: 22px; height: 22px; }
+.topbar .brand-mark { width: 28px; height: 28px; margin-left: 6px; margin-right: 4px; }
+.progress-strip { height: 3px; }
+.login-card { display: flex; flex-direction: column; gap: 10px; border-color: var(--brand-2); }
