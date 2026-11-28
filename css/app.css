@@ -515,8 +515,6 @@ button.stat:not(:disabled):active { background: var(--na-bg); }
 .btn.mic.on { background: var(--nok-bg); border-color: var(--nok); color: var(--nok); }
 
 /* thanh tiêu đề tự ẩn khi cuộn xuống; trang chủ: thẻ tạo mới gọn ở cuối */
-.topbar.away { transform: translateY(calc(-100% - env(safe-area-inset-top, 0px))); }
-@media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }
 .new-card { display: flex; flex-direction: column; gap: 10px; }
 
 /* thanh tiêu đề gọn một dòng: tên và dòng phụ nằm cùng hàng */
@@ -529,3 +527,8 @@ button.stat:not(:disabled):active { background: var(--na-bg); }
 .topbar .brand-mark { width: 28px; height: 28px; margin-left: 6px; margin-right: 4px; }
 .progress-strip { height: 3px; }
 .login-card { display: flex; flex-direction: column; gap: 10px; border-color: var(--brand-2); }
+
+/* Thanh tiêu đề không còn dính trên đầu màn hình: nó cuộn đi cùng nội dung, không che nội dung nữa.
+   Chỉ còn một dải mỏng đúng bằng thanh trạng thái của điện thoại để chữ không chạy dưới đồng hồ. */
+.topbar { position: static; transition: none; }
+html.edge-light body::before { background: var(--bg); }

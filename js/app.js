@@ -403,13 +403,9 @@
     else if (S.sel) { S.sel = null; render(false); }
   }
   window.addEventListener('popstate', goBack);
-  // Thanh tiêu đề tự ẩn khi cuộn xuống để nhường chỗ cho nội dung, hiện lại khi cuộn lên.
-  let lastY = 0;
-  window.addEventListener('scroll', () => {
-    const y = window.scrollY; const tb = document.querySelector('.topbar');
-    if (tb) { if (y > lastY + 6 && y > 90) tb.classList.add('away'); else if (y < lastY - 6 || y < 40) tb.classList.remove('away'); }
-    lastY = y;
-  }, { passive: true });
+  // iPhone đời mới tự phủ một lớp mờ sáng lên mép trên màn hình và dùng chữ đồng hồ màu tối: cho dải thanh trạng thái
+  // cùng màu nền trang để không bị loang màu. Máy khác giữ dải màu thương hiệu (chữ thanh trạng thái màu trắng).
+  try { if (/iPhone|iPad|iPod/.test(navigator.userAgent) && window.CSS && CSS.supports && CSS.supports('anchor-name', '--a')) document.documentElement.classList.add('edge-light'); } catch (e) { /* ignore */ }
   // Vuốt từ mép trái sang phải để quay lại (ứng dụng cài lên màn hình chính và trong Lark không có nút Back).
   let swipe = null;
   document.addEventListener('touchstart', (e) => {
