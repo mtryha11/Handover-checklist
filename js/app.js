@@ -180,6 +180,7 @@
 
   /* ---------------- state ---------------- */
   const settings = Object.assign({ inspector: '', om: '', theme: 'system', geoStamp: true }, lsGet('pvho-settings', {}));
+  if (!settings.dev) { settings.dev = uid(); lsSet('pvho-settings', settings); }
   const S = { view: 'home', tab: 'check', sec: null, filter: 'all', q: '', list: [], isNew: false, focus: null, sel: null };
   let cur = null;            // inspection đang mở
   const photoCache = new Map(); // ảnh gốc (chỉ dùng khi xem từng ảnh và khi xuất file)
@@ -204,7 +205,12 @@
     scheduleSync();
   }
   function flush() { clearTimeout(saveT); saveT = null; if (cur) return store.put('insp', cur).catch(() => toast('Không lưu được dữ liệu – bộ nhớ có thể đã đầy')); }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+  // Rời ứng dụng: lưu và đẩy ngay lên Lark để máy khác thấy. Quay lại: kéo thay đổi của máy khác về.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { flush(); if (cur && S.view !== 'info' && sync.me) runSync({ quick: true, force: true }); }
+    else if (cur && S.view !== 'info') runSync({ force: true });
+    else if (S.view === 'home') loadRemote();
+  });
   window.addEventListener('pagehide', flush);
 
   /* ---------------- checklist helpers ---------------- */
@@ -252,11 +258,16 @@
   }
   const mvLine = (st) => `${st.n}/${st.total} string đã đo${st.dev.length ? ` · <b class="dev">Lệch quá 10 %: ${st.dev.map(esc).join(', ')}</b>` : st.n === st.total ? ' · các string đồng đều' : ''}`;
   const noteOf = (it, r) => [r.note || '', it.ms && r.mv ? it.ms.map((l) => `${l}: ${String(r.mv[l] || '').trim() || '–'}`).join(' · ') : ''].filter(Boolean).join('\n');
-  const R = (c) => cur.res[c] || (cur.res[c] = {});
-  function count(items) {
+  // R: lấy bản ghi của hạng mục để SỬA nội dung (đóng dấu thời điểm sửa – dùng khi gộp dữ liệu giữa các máy).
+  // RP: lấy để thêm / bớt ảnh (ảnh được gộp cả hai bên nên không tính là sửa nội dung).
+  const RP = (c) => cur.res[c] || (cur.res[c] = {});
+  const R = (c) => { const r = RP(c); r.t = Date.now(); return r; };
+  const mark = (k) => { if (cur) (cur.tm = cur.tm || {})[k] = Date.now(); };
+  function count(items, doc) {
+    doc = doc || cur;
     const n = { ok: 0, nok: 0, na: 0, none: 0, total: items.length, A: 0, B: 0, C: 0 };
     for (const it of items) {
-      const r = cur.res[it.c]; const s = r && r.s;
+      const r = doc.res[it.c]; const s = r && r.s;
       if (s) n[s]++; else n.none++;
       if (s === 'nok') n[r.sev || 'B']++;
     }
@@ -300,7 +311,7 @@
     Object.assign(cur.info, src.info || {});
     cur.site = PM.normalize({ zones: (src.zones || []).slice(), assets: JSON.parse(JSON.stringify(src.assets || [])), notes: (src.notes || []).slice() });
   }
-  function siteChanged() { cur.site = PM.normalize(cur.site); if (S.view !== 'info') { touch(); siteRemember(); } render(false); }
+  function siteChanged() { cur.site = PM.normalize(cur.site); mark('site'); if (S.view !== 'info') { touch(); siteRemember(); } render(false); }
   const assetHasData = (id) => Object.keys(cur.res).some((c) => c.startsWith(id + '-') && hasData(c));
   function siteCard(isNew) {
     const st = cur.site; const saved = sitesAll();
@@ -371,13 +382,14 @@
   /* ---------------- navigation ---------------- */
   function go(view, opts = {}) {
     if (mic.rec) micToggle(mic.c);
+    vrecStop();
     Object.assign(S, { view }, opts);
     render(true);
     try { if (S.view !== 'home' && !(history.state && history.state.pvho)) history.pushState({ pvho: 1 }, ''); } catch (e) { /* ignore */ }
   }
   function goUp() {
     if (S.view === 'sec') go('insp', { tab: 'check' });
-    else if (S.view === 'insp' || S.view === 'info') { flush(); cur = null; geoStop(); loadHome(); }
+    else if (S.view === 'insp' || S.view === 'info') { vrecStop(); flush(); if (S.view === 'insp' && sync.me) runSync({ quick: true, force: true }); cur = null; geoStop(); loadHome(); }
     else loadHome();
   }
   let lastBack = 0;
@@ -412,6 +424,7 @@
   async function loadHome() {
     S.list = (await store.all('insp')).sort((a, b) => b.updated - a.updated);
     S.view = 'home'; render(true);
+    loadRemote();
   }
   async function openInsp(id, tab = 'check') {
     const it = await store.get('insp', id);
@@ -421,8 +434,9 @@
     photoCache.clear(); thumbCache.clear(); openSet.clear(); hintSet.clear();
     const photos = await store.photosOf(id);
     photoGeo.clear();
-    photos.forEach((p) => { photoCache.set(p.id, p.data); if (p.thumb) thumbCache.set(p.id, p.thumb); if (p.geo) photoGeo.set(p.id, p.geo); });
-    setTimeout(() => fillThumbs(id, photos.filter((p) => !p.thumb)), 300);
+    const imgs = photos.filter((p) => p.kind !== 'audio');
+    imgs.forEach((p) => { photoCache.set(p.id, p.data); if (p.thumb) thumbCache.set(p.id, p.thumb); if (p.geo) photoGeo.set(p.id, p.geo); });
+    setTimeout(() => fillThumbs(id, imgs.filter((p) => !p.thumb)), 300);
     geoStart(); scheduleSync(2500);
     go('insp', { tab, q: '', filter: 'all' });
   }
@@ -489,7 +503,7 @@
       return `<button class="card insp-card ${S.sel ? 'picking' : ''} ${on ? 'picked' : ''}" data-act="${S.sel ? 'sel-toggle' : 'open'}" data-id="${x.id}" ${S.sel ? `aria-pressed="${!!on}"` : ''}>
         ${S.sel ? `<span class="pick-box">${on ? I.check : ''}</span>` : ''}
         <div class="row"><h3 class="grow">${esc(x.info.project || 'Chưa đặt tên')}</h3><span class="chip sun">${n.pct}%</span></div>
-        <div class="insp-meta"><span class="chip ${n.none ? 'sun' : 'ok'}" style="margin-right:2px">${n.none ? 'Đang dở' : 'Đã xong'}</span><span>${esc(p.label)}${x.info.purpose === 'pm' ? ' · ' + esc(periodLabel(x.info)) : ''}</span><span>${esc(CL.types[x.info.type] || '')}</span>${x.info.dc ? `<span>${esc(x.info.dc)} kWp</span>` : ''}<span>${fmtDate(x.info.date)}</span></div>
+        <div class="insp-meta"><span class="chip ${n.none ? 'sun' : 'ok'}" style="margin-right:2px">${n.none ? 'Đang dở' : 'Đã xong'}</span>${(S.remote || []).some((y) => y.id === x.id && y.ver > ((x.lark || {}).stV || 0)) ? '<span class="chip nok" style="margin-right:2px">Có bản mới trên Lark</span>' : ''}<span>${esc(p.label)}${x.info.purpose === 'pm' ? ' · ' + esc(periodLabel(x.info)) : ''}</span><span>${esc(CL.types[x.info.type] || '')}</span>${x.info.dc ? `<span>${esc(x.info.dc)} kWp</span>` : ''}<span>${fmtDate(x.info.date)}</span></div>
         ${bar(n)}
         <div class="chips"><span class="chip ok">${n.ok} đạt</span><span class="chip nok">${n.nok} không đạt</span>${n.A ? `<span class="chip nok">${n.A} mức A</span>` : ''}<span class="chip">${n.none} chưa kiểm</span></div>
       </button>`;
@@ -501,6 +515,7 @@
         <label class="btn ghost" style="min-height:38px;font-size:13px">${I.upload} Nhập file sao lưu / hồ sơ<input type="file" accept=".json,application/json" data-import hidden></label></div>
       ${S.sel ? `<div class="sel-bar"><button class="btn" data-act="sel-cancel">Hủy</button><span class="grow">Đã chọn ${S.sel.size}/${S.list.length}</span><button class="btn" data-act="sel-all">Chọn hết</button><button class="btn danger" data-act="sel-delete" ${S.sel.size ? '' : 'disabled'}>${I.trash} Xóa</button></div>` : ''}
       ${cards || `<div class="card empty">${I.doc}<p>Chưa có công việc nào trên máy này. Tạo mới ở bên dưới.</p><div class="btn-grid"><button class="btn" data-act="demo-pm">Ví dụ bảo trì quý</button><button class="btn" data-act="demo">Ví dụ bàn giao</button></div></div>`}
+      ${remoteHTML()}
       <div class="eyebrow">Tạo mới</div>
       <section class="card pad new-card">
         <button class="btn sun block" data-act="new-pm">${I.plus} Đợt bảo trì quý</button>
@@ -511,6 +526,18 @@
       <p class="muted small" style="text-align:center">Dữ liệu chỉ lưu trên điện thoại này. Xuất file sao lưu (.json) để chuyển máy hoặc lưu trữ.</p>
       ${S.sel ? '<div style="height:84px"></div>' : ''}
     </main>`;
+  }
+
+  // Công việc của cả nhóm đang có trên Lark mà máy này chưa có.
+  function remoteHTML() {
+    if (!S.remote || !larkReady()) return '';
+    const here = new Set(S.list.map((x) => x.id));
+    const rows = S.remote.filter((x) => !here.has(x.id)).slice(0, 30);
+    return `<div class="row"><span class="eyebrow grow">Trên Lark – công việc của cả nhóm (${rows.length})</span><button class="btn ghost" style="min-height:38px;font-size:13px" data-act="remote-refresh">Làm mới</button></div>
+      ${rows.map((x) => `<article class="card pad remote-card">
+        <div class="row"><h3 class="grow">${esc(x.project || 'Chưa đặt tên')}</h3><span class="chip sun">${x.pct}%</span></div>
+        <div class="insp-meta"><span>${esc(x.purpose)}${x.period ? ' · ' + esc(x.period) : ''}</span><span>${esc(x.by)}</span><span>${x.at ? fmtDT(x.at) : ''}</span></div>
+        <button class="btn block" data-act="pull" data-id="${esc(x.id)}">${I.save} Tải về làm tiếp</button></article>`).join('') || '<p class="muted small" style="margin:0">Mọi công việc trên Lark đều đã có trên máy này.</p>'}`;
   }
 
   /* ----- info form ----- */
@@ -645,7 +672,7 @@
     const detail = open ? `<div class="detail">
         ${st === 'nok' ? `<div class="sev" role="group" aria-label="Mức độ">${['A', 'B', 'C'].map((k) => `<button class="sv-${k} ${(r.sev || 'B') === k ? 'on' : ''}" data-act="sev" data-v="${k}" data-c="${c}"><b>${k}</b>${SEV[k].short}</button>`).join('')}</div>` : ''}
         <textarea class="inp" id="n-${c}" data-f="note" data-c="${c}" placeholder="${st === 'nok' ? 'Mô tả tồn tại, vị trí (dãy / string / tủ / inverter số…)' : 'Ghi chú'}">${esc(r.note || '')}</textarea>
-        ${SR ? `<button class="btn mic ${mic.c === c ? 'on' : ''}" data-act="mic" data-c="${c}">${I.mic}<span>${mic.c === c ? 'Đang nghe… bấm để dừng' : 'Nói để ghi chú'}</span></button>` : '<p class="muted small" style="margin:0">Nhập bằng giọng nói: chạm vào ô ghi chú rồi bấm biểu tượng micro trên bàn phím.</p>'}
+        ${(canRecord && larkReady()) || SR ? `<button class="btn mic ${(vrec.c === c && vrec.mr) || mic.c === c ? 'on' : ''}" data-act="mic" data-c="${c}">${I.mic}<span>${micLabel(c)}</span></button><p class="muted small" id="au-${c}" style="margin:0">${auLine(r)}</p>` : '<p class="muted small" style="margin:0">Nhập bằng giọng nói: chạm vào ô ghi chú rồi bấm biểu tượng micro trên bàn phím.</p>'}
         ${st === 'nok' ? `<div class="two"><div class="field"><label for="rp-${c}">Trách nhiệm xử lý</label><input class="inp" id="rp-${c}" data-f="resp" data-c="${c}" value="${esc(r.resp || '')}" placeholder="EPC / CĐT / O&M"></div>
           <div class="field"><label for="du-${c}">Hạn khắc phục</label><input class="inp" type="date" id="du-${c}" data-f="due" data-c="${c}" value="${esc(r.due || '')}"></div></div>` : ''}
         ${nph ? `<div class="photos">${photosHTML(c, r.ph)}</div>` : ''}
@@ -717,10 +744,17 @@
     mic.rec = rec; mic.c = c;
     try { rec.start(); micBtn(c, true); } catch (e) { mic.rec = null; mic.c = null; mic.on = false; toast('Không bật được nhận giọng nói trên trình duyệt này'); }
   }
-  function micToggle(c) {
+  async function micToggle(c) {
+    if (vrec.mr) { const same = vrec.c === c; vrecStop(); if (same) return; }
     const same = mic.c === c; const was = mic.rec;
     if (was) { mic.rec = null; mic.on = false; try { was.stop(); } catch (e) { /* ignore */ } micBtn(mic.c, false); mic.c = null; if (same) return; }
-    mic.on = true; micStart(c);
+    if (vrec.busy) return;
+    // Ưu tiên ghi âm rồi chuyển thành chữ bằng Whisper (qua cầu nối). Cầu nối chưa bật thì dùng cách của trình duyệt.
+    if (canRecord && larkReady()) {
+      if (!sync.me && navigator.onLine !== false) { try { await loadMe(); } catch (e) { /* chưa biết: cứ ghi âm, chuyển sau */ } }
+      if (!sync.me || feat('stt')) { vrecStart(c); return; }
+    }
+    if (SR) { mic.on = true; micStart(c); } else toast('Máy chủ chưa bật chuyển giọng nói. Dùng biểu tượng micro trên bàn phím.', 4000);
   }
 
   /* ----- punch list ----- */
@@ -1231,7 +1265,7 @@
     const id = uid();
     await store.put('photos', { id, insp: cur.id, code: c, data: made.data, thumb: made.thumb, geo: made.geo, ts: Date.now() });
     photoCache.set(id, made.data); thumbCache.set(id, made.thumb); if (made.geo) photoGeo.set(id, made.geo);
-    const r = R(c); r.ph = r.ph || []; r.ph.push(id); touch();
+    const r = RP(c); r.ph = r.ph || []; r.ph.push(id); touch();
     return id;
   }
   // kind: 'cam' = vừa chụp bằng camera máy (dùng vị trí hiện tại), 'lib' = chọn từ thư viện (chỉ dùng GPS trong ảnh)
@@ -1423,59 +1457,283 @@
     else if (navigator.onLine === false) { txt = 'Lark: đang offline – sẽ đồng bộ khi có mạng'; cls = 'warn'; }
     else {
       const at = cur && cur.lark && cur.lark.at;
-      txt = at ? `Lark: đã đồng bộ lúc ${fmtDT(at).slice(-5)}` : 'Lark: chưa đồng bộ biên bản này';
+      txt = (at ? `Lark: đã đồng bộ lúc ${fmtDT(at).slice(-5)}` : 'Lark: chưa đồng bộ biên bản này') + (sync.dl ? ` · đang tải ${sync.dl} ảnh từ Lark` : '');
       btn = '<button class="btn" data-act="lark-sync">Đồng bộ ngay</button>';
     }
     return `<div class="sync-bar ${cls}" id="sync-bar"><span>${esc(txt)}</span>${btn}</div>`;
   }
-  async function runSync() {
+  /* ---------------- đồng bộ hai chiều giữa các máy (qua Lark Base) ----------------
+   * Mỗi công việc có một "file dữ liệu đồng bộ" đính ở dòng Biên bản: toàn bộ kết quả, ghi chú, số đo, chữ ký và
+   * mã tệp của từng ảnh trên Base. Máy khác đăng nhập Lark sẽ thấy công việc của cả nhóm, tải về và làm tiếp.
+   * Khi hai máy cùng sửa: so theo từng hạng mục, lần sửa sau cùng thắng; ảnh thì gộp cả hai bên. */
+  async function loadMe() {
+    if (!sync.me || Date.now() - sync.meAt > 600000 || sync.meUrl !== settings.larkUrl) { sync.me = await larkApi('/api/me'); sync.meAt = Date.now(); sync.meUrl = settings.larkUrl; }
+    return sync.me;
+  }
+  const feat = (k) => !!(sync.me && (sync.me.features || []).includes(k));
+  const periodKey = (f) => [f.year, f.period].filter(Boolean).join('-');
+  const b64utf8 = (str) => { const b = new TextEncoder().encode(str); let bin = ''; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(bin); };
+  const utf8b64 = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0)));
+  // Dấu vân tay của nội dung cần đồng bộ (không tính các số liệu tạm của việc đồng bộ).
+  const stateSig = (doc) => hashOf(JSON.stringify([doc.info, doc.site, doc.res, doc.custom, doc.sign, doc.verdict, doc.prev, doc.tm]) +
+    JSON.stringify(Object.entries(((doc.lark || {}).items) || {}).map(([c, i]) => [c, i.ph])));
+
+  // Gộp bản từ máy khác (b) vào bản trên máy này (a). Trả về danh sách ảnh đã bị xóa ở máy kia để xóa ở máy này.
+  function mergeInto(a, b, ver) {
+    const ta = a.tm = a.tm || {}; const tb = b.tm || {};
+    const newer = (k) => (tb[k] || 0) > (ta[k] || 0);
+    if (newer('info') && b.info) { a.info = b.info; ta.info = tb.info; }
+    if (newer('site') && b.site) { a.site = b.site; ta.site = tb.site; }
+    if (newer('verdict') && b.verdict) { a.verdict = b.verdict; ta.verdict = tb.verdict; }
+    if (newer('custom')) { a.custom = b.custom || []; ta.custom = tb.custom; }
+    a.sign = a.sign || {};
+    for (const [k, sg] of Object.entries(b.sign || {})) if (!a.sign[k] || (sg.ts || 0) > (a.sign[k].ts || 0)) a.sign[k] = sg;
+    if (!a.prev && b.prev) a.prev = b.prev;
+    a.res = a.res || {};
+    const dropped = [];
+    for (const [c, rb0] of Object.entries(b.res || {})) {
+      const rb = Object.assign({}, rb0); delete rb.au; // ghi âm đang chờ chỉ có trên máy đã ghi
+      const ra = a.res[c];
+      if (!ra) { a.res[c] = rb; continue; }
+      const dx = [...new Set([...(ra.dx || []), ...(rb.dx || [])])];
+      const ph = [...new Set([...(ra.ph || []), ...(rb.ph || [])])].filter((id) => !dx.includes(id));
+      (ra.ph || []).forEach((id) => { if (dx.includes(id)) dropped.push(id); });
+      const win = (rb.t || 0) > (ra.t || 0) ? rb : ra;
+      if (ra.au) win.au = ra.au;
+      if (ph.length) win.ph = ph; else delete win.ph;
+      if (dx.length) win.dx = dx; else delete win.dx;
+      a.res[c] = win;
+    }
+    // Mã tệp trên Lark: giữ cái của máy này, bổ sung cái máy kia đã tải lên.
+    const La = a.lark = a.lark && a.lark.v === 2 ? a.lark : { v: 2, rec: (a.lark && a.lark.rec) || '', items: {} };
+    const Lb = b.lark || {};
+    La.rec = La.rec || Lb.rec || ''; La.pdf = La.pdf || Lb.pdf || ''; La.xlsx = La.xlsx || Lb.xlsx || '';
+    La.items = La.items || {};
+    for (const [c, ib] of Object.entries(Lb.items || {})) {
+      const ia = La.items[c] = La.items[c] || { rec: '', h: '', ph: {} };
+      ia.rec = ia.rec || ib.rec || ''; ia.ph = Object.assign({}, ib.ph || {}, ia.ph || {});
+    }
+    La.dev = La.dev || {};
+    for (const [k, db] of Object.entries(Lb.dev || {})) { if (!La.dev[k]) La.dev[k] = { rec: db.rec || '', h: '' }; else La.dev[k].rec = La.dev[k].rec || db.rec || ''; }
+    La.cols = Object.assign({}, Lb.cols || {}, La.cols || {});
+    La.stV = ver; La.st = Lb.st || La.st || '';
+    // Sau khi gộp mà giống hệt bản trên Lark thì không cần đẩy lại.
+    La.stH = stateSig(a) === stateSig(b) ? stateSig(a) : '';
+    a.updated = Math.max(a.updated || 0, b.updated || 0);
+    return dropped;
+  }
+  async function fetchState(row) {
+    const d = await larkApi(`/api/media?t=insp&token=${encodeURIComponent(row.state)}`);
+    let j; try { j = JSON.parse(utf8b64(d.data)); } catch (e) { throw new Error('File dữ liệu đồng bộ trên Lark bị lỗi'); }
+    if (j.app !== 'pv-handover' || !j.insp || j.insp.id !== row.id) throw new Error('File dữ liệu đồng bộ trên Lark không đúng định dạng');
+    return j;
+  }
+  async function dropPhotos(ids) {
+    for (const id of ids) { await store.del('photos', id).catch(() => {}); photoCache.delete(id); thumbCache.delete(id); }
+  }
+  // Tải một công việc từ Lark về máy này (hoặc gộp vào bản đã có trên máy).
+  async function pullDoc(row) {
+    const remote = await fetchState(row);
+    let doc = cur && cur.id === row.id ? cur : await store.get('insp', row.id);
+    if (doc) await dropPhotos(mergeInto(doc, remote.insp, row.ver));
+    else {
+      doc = remote.insp;
+      for (const r of Object.values(doc.res || {})) delete r.au;
+      doc.lark = doc.lark && doc.lark.v === 2 ? doc.lark : { v: 2, rec: row.rec || '', items: {} };
+      doc.lark.stV = row.ver; doc.lark.stH = stateSig(doc);
+    }
+    await store.put('insp', doc);
+    return doc;
+  }
+  // Trước khi đẩy lên: nếu trên Lark có bản mới hơn (máy khác vừa làm) thì gộp về trước.
+  const pullAt = new Map();
+  async function pullIfNewer(doc, force) {
+    if (!feat('pull')) return false;
+    if (!force && Date.now() - (pullAt.get(doc.id) || 0) < 60000) return false;
+    pullAt.set(doc.id, Date.now());
+    const d = await larkApi('/api/inspections?id=' + encodeURIComponent(doc.id));
+    const row = (d.items || []).find((x) => x.id === doc.id);
+    if (!row || !(row.ver > ((doc.lark || {}).stV || 0))) return false;
+    await pullDoc(row);
+    if (cur === doc) { clearTimeout(saveT); saveT = null; if (!document.getElementById('cam')) render(false); toast('Đã cập nhật thay đổi từ máy khác', 3000); }
+    return true;
+  }
+  // Tải về các ảnh máy khác đã chụp (đang có trên Base) mà máy này chưa có.
+  let dlBusy = false;
+  async function fetchPhotos(doc) {
+    if (dlBusy || !feat('pull') || !larkReady() || navigator.onLine === false) return;
+    dlBusy = true;
+    try {
+      const have = new Set((await store.photosOf(doc.id)).map((p) => p.id));
+      const items = (doc.lark && doc.lark.items) || {}; const todo = [];
+      for (const [c, r] of Object.entries(doc.res || {})) for (const id of r.ph || []) { const tok = ((items[c] || {}).ph || {})[id]; if (tok && !have.has(id)) todo.push({ c, id, tok }); }
+      sync.dl = todo.length; if (todo.length) setSync(sync.state);
+      const where = isPM(doc) ? 'dev&p=' + encodeURIComponent(periodKey(doc.info)) : 'insp';
+      for (const q of todo) {
+        if (navigator.onLine === false) break;
+        const d = await larkApi(`/api/media?t=${where}&token=${encodeURIComponent(q.tok)}`);
+        const rec = { id: q.id, insp: doc.id, code: q.c, data: `data:${/^image\//.test(d.mime || '') ? d.mime : 'image/jpeg'};base64,${d.data}`, ts: Date.now() };
+        await store.put('photos', rec);
+        sync.dl--; setSync(sync.state);
+        if (cur && cur.id === doc.id) {
+          photoCache.set(q.id, rec.data);
+          const el = document.getElementById('it-' + q.c);
+          if (el && !(document.activeElement && el.contains(document.activeElement))) refreshItem(q.c);
+          await fillThumbs(doc.id, [rec]);
+        }
+      }
+    } catch (e) { /* thử lại ở lần đồng bộ sau */ } finally { dlBusy = false; sync.dl = 0; setSync(sync.state); }
+  }
+  // Danh sách công việc của cả nhóm trên Lark, hiện ở trang chủ.
+  async function loadRemote(force) {
+    if (!larkReady() || navigator.onLine === false) return;
+    if (!force && sync.listAt && Date.now() - sync.listAt < 30000) return;
+    try {
+      await loadMe();
+      if (!feat('pull')) { S.remote = null; return; }
+      S.remote = (await larkApi('/api/inspections')).items || []; sync.listAt = Date.now();
+      if (S.view === 'home') render(false);
+    } catch (e) { /* không có mạng hoặc cầu nối bản cũ: bỏ qua */ }
+  }
+
+  /* ---------------- ghi chú bằng giọng nói: ghi âm rồi chuyển thành chữ bằng Whisper qua cầu nối ---------------- */
+  const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder) && !ARTIFACT;
+  const vrec = { mr: null, c: null, stream: null, chunks: [], t0: 0, tick: null, busy: null };
+  const micLabel = (c) => (vrec.c === c && vrec.mr ? `Đang ghi âm ${fmtSec(Date.now() - vrec.t0)} · bấm để dừng` : vrec.busy === c ? 'Đang chuyển thành chữ…' : mic.c === c ? 'Đang nghe… bấm để dừng' : 'Nói để ghi chú');
+  const fmtSec = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${pad2(s % 60)}`; };
+  function micPaint(c) {
+    const b = document.querySelector(`[data-act="mic"][data-c="${c}"]`);
+    if (b) { b.classList.toggle('on', (vrec.c === c && !!vrec.mr) || mic.c === c); b.querySelector('span').textContent = micLabel(c); }
+  }
+  async function vrecStart(c) {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+    catch (e) { toast('Chưa cho phép dùng micro cho ứng dụng này', 3500); return; }
+    const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
+    const mr = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 32000 } : undefined);
+    const insp = cur; const chunks = [];
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      clearInterval(vrec.tick); stream.getTracks().forEach((t) => t.stop());
+      vrec.mr = null; vrec.c = null; micPaint(c);
+      const blob = new Blob(chunks, { type: mr.mimeType || type || 'audio/webm' });
+      if (blob.size < 800) return; // bấm nhầm
+      const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.onerror = rej; fr.readAsDataURL(blob); });
+      // Lưu ghi âm trước, chuyển thành chữ sau: mất mạng trên mái cũng không mất nội dung.
+      const rec = { id: uid(), insp: insp.id, kind: 'audio', code: c, data, mime: blob.type, ts: Date.now() };
+      await store.put('photos', rec);
+      const r = insp.res[c] || (insp.res[c] = {}); r.au = (r.au || []).concat(rec.id);
+      await store.put('insp', insp);
+      await sttOne(insp, rec);
+    };
+    vrec.mr = mr; vrec.c = c; vrec.t0 = Date.now();
+    mr.start();
+    vrec.tick = setInterval(() => { micPaint(c); if (Date.now() - vrec.t0 > 120000) vrecStop(); }, 1000); // tối đa 2 phút mỗi lần
+    micPaint(c);
+  }
+  function vrecStop() { if (vrec.mr && vrec.mr.state !== 'inactive') { try { vrec.mr.stop(); } catch (e) { /* ignore */ } } }
+  // Chuyển một ghi âm thành chữ và nối vào ghi chú của hạng mục. Lỗi / mất mạng thì giữ lại, lần đồng bộ sau thử tiếp.
+  async function sttOne(insp, rec) {
+    const c = rec.code; const live = () => cur === insp;
+    const pending = () => { if (live()) refreshNote(c); };
+    if (!larkReady() || navigator.onLine === false) { toast('Đã lưu ghi âm – sẽ chuyển thành chữ khi có mạng', 3500); pending(); return false; }
+    vrec.busy = c; micPaint(c);
+    try {
+      const d = await larkApi('/api/stt', { data: rec.data, mime: rec.mime });
+      const r = insp.res[c] || (insp.res[c] = {});
+      const text = (d.text || '').trim();
+      if (text) { r.note = [String(r.note || '').trim(), text].filter(Boolean).join(' '); r.t = Date.now(); }
+      r.au = (r.au || []).filter((id) => id !== rec.id); if (!r.au.length) delete r.au;
+      await store.del('photos', rec.id);
+      if (live()) touch(); else await store.put('insp', insp);
+      if (!text) toast('Không nghe rõ nội dung ghi âm', 3000);
+      return true;
+    } catch (e) {
+      toast(/STT_API_KEY|501/.test(e.message) ? 'Máy chủ chưa bật chuyển giọng nói thành chữ' : 'Chưa chuyển được thành chữ – đã lưu ghi âm, sẽ thử lại', 3500);
+      return false;
+    } finally { vrec.busy = null; if (live()) { refreshNote(c); micPaint(c); } }
+  }
+  function refreshNote(c) {
+    const el = document.getElementById('n-' + c); const r = (cur && cur.res[c]) || {};
+    if (el && document.activeElement !== el) el.value = r.note || '';
+    const w = document.getElementById('au-' + c); if (w) w.textContent = auLine(r);
+  }
+  const auLine = (r) => ((r.au || []).length ? `${r.au.length} ghi âm đang chờ chuyển thành chữ` : '');
+  async function sttFlush(insp) {
+    if (!feat('stt')) return;
+    const recs = (await store.photosOf(insp.id)).filter((p) => p.kind === 'audio');
+    for (const rec of recs) { if (!(await sttOne(insp, rec))) break; }
+  }
+
+  // opts.quick: đang rời biên bản / rời ứng dụng – chỉ đẩy lên, không chờ kéo về. opts.force: đẩy file dữ liệu ngay.
+  async function runSync(opts = {}) {
     if (!larkReady() || !cur || navigator.onLine === false) { setSync(sync.state); return; }
+    if (S.view === 'info') return; // biên bản đang tạo, chưa bấm "Tạo": chưa đưa lên Lark
     if (sync.running) { sync.again = true; return; }
     const insp = cur; sync.running = true; setSync('running');
     const save = () => store.put('insp', insp).catch(() => {});
+    let stateLater = false;
     try {
+      if (!opts.quick) {
+        await loadMe();
+        await sttFlush(insp);
+        await pullIfNewer(insp, opts.force);
+        if (cur !== insp) { sync.state = 'idle'; return; } // đã rời biên bản trong lúc chờ
+      }
       // v2: chỉ các hạng mục "Không đạt" thành dòng riêng (bảng Tồn tại); còn lại gộp vào cột theo Phần của dòng Biên bản.
       let L = insp.lark;
       if (!L || L.v !== 2) L = insp.lark = { v: 2, rec: (L && L.rec) || '', pdf: (L && L.pdf) || '', xlsx: (L && L.xlsx) || '', items: {} };
-      const f = insp.info, all = allItems(), n = count(all);
+      // Từ đây tới lần "await" đầu tiên không được chờ gì: mọi thứ phụ thuộc biên bản đang mở phải được chụp lại ngay.
+      const f = insp.info, all = allItems(), n = count(all, insp), verdictText = verdictOf(n).text;
       // Cầu nối bản mới có bảng "Thiết bị bảo trì": mỗi thiết bị một dòng, mỗi hạng mục một cặp cột nội dung + ảnh.
-      if (!sync.me || Date.now() - sync.meAt > 600000 || sync.meUrl !== settings.larkUrl) { sync.me = await larkApi('/api/me'); sync.meAt = Date.now(); sync.meUrl = settings.larkUrl; }
-      const slots = +sync.me.devSlots || 0;
-      const useDev = isPM(insp) && (sync.me.features || []).includes('devices') && slots > 0;
+      const slots = +(sync.me || {}).devSlots || 0;
+      const useDev = isPM(insp) && feat('devices') && slots > 0;
       // Chụp lại danh sách nhóm ngay từ đầu: người dùng có thể rời biên bản khi đang đồng bộ.
       const secMap = new Map(SECS().map((sc) => [sc.id, sc]));
       // 1) Ảnh: tải lên từng ảnh mới (của mọi hạng mục)
       const queue = [];
       for (const it of all) {
         const r = insp.res[it.c] || {}; const li = L.items[it.c] = L.items[it.c] || { rec: '', h: '', ph: {} };
-        const ids = (r.ph || []).filter((id) => photoCache.has(id));
+        // Giữ mã tệp của mọi ảnh thuộc hạng mục, kể cả ảnh máy khác chụp mà máy này chưa tải về.
+        const ids = r.ph || [];
         Object.keys(li.ph).forEach((id) => { if (!ids.includes(id)) delete li.ph[id]; });
-        ids.forEach((id, k) => { if (!li.ph[id]) queue.push({ c: it.c, id, k }); });
+        ids.forEach((id, k) => { if (!li.ph[id] && photoCache.has(id)) queue.push({ c: it.c, id, k }); });
       }
       sync.pendingPh = queue.length; setSync('running');
       for (const q of queue) {
-        if (cur !== insp) break;
-        const data = photoCache.get(q.id); if (!data) { sync.pendingPh--; continue; }
+        const data = cur === insp || !cur ? photoCache.get(q.id) : null; // đã mở biên bản khác thì bộ nhớ ảnh không còn của biên bản này if (!data) { sync.pendingPh--; continue; }
         const d = await larkApi('/api/upload', { kind: 'image', name: `${q.c}_${q.k + 1}.jpg`, data: data.split(',')[1] });
         L.items[q.c].ph[q.id] = d.file_token; sync.pendingPh--; setSync('running'); await save();
       }
       const toksOf = (it) => ((insp.res[it.c] || {}).ph || []).map((id) => L.items[it.c].ph[id]).filter(Boolean);
+      // 1b) File dữ liệu đồng bộ (để máy khác tải về làm tiếp): chỉ gửi khi nội dung đổi, tối đa mỗi phút một lần.
+      if (feat('pull')) {
+        const sig = stateSig(insp);
+        if (L.stH !== sig) {
+          if (opts.force || !L.stAt || Date.now() - L.stAt > 60000) {
+            const ver = Date.now();
+            const d = await larkApi('/api/upload', { kind: 'file', name: `dong-bo_${insp.id}.json`, data: b64utf8(JSON.stringify({ app: 'pv-handover', sync: 1, by: settings.dev, ver, insp })) });
+            L.st = d.file_token; L.stV = ver; L.stH = sig; L.stAt = Date.now(); await save();
+          } else stateLater = true;
+        }
+      }
       // 2) Dòng Biên bản: tổng quan + cột theo từng Phần (% hoàn thành, số không đạt, ảnh hiện trường)
       const sum = {
         'Dự án': f.project, 'Mã dự án': f.pcode, 'Mục đích': (PURPOSE[f.purpose] || PURPOSE.handover).label, 'Loại dự án': CL.types[f.type],
         'Trạng thái': n.none ? 'Đang kiểm tra' : 'Đã kiểm xong', 'Hoàn thành (%)': n.pct, 'Tổng hạng mục': n.total,
         'Đạt': n.ok, 'Không đạt': n.nok, 'N/A': n.na, 'Chưa kiểm': n.none, 'Tồn tại A': n.A, 'Tồn tại B': n.B, 'Tồn tại C': n.C,
-        'Kết luận': verdictOf(n).text, 'Ngày kiểm tra': f.date, 'Người kiểm tra': f.inspector, 'Địa điểm': f.address, 'Tọa độ GPS': f.gps,
+        'Kết luận': verdictText, 'Ngày kiểm tra': f.date, 'Người kiểm tra': f.inspector, 'Địa điểm': f.address, 'Tọa độ GPS': f.gps,
         'Công suất DC (kWp)': f.dc, 'Chủ đầu tư': f.owner, 'Bên bàn giao (EPC)': f.epc, 'Đơn vị O&M': f.om,
         'Biên bản PDF': L.pdf ? [L.pdf] : [], 'Chi tiết kết quả (Excel)': L.xlsx ? [L.xlsx] : []
       };
       const types = {};
+      if (L.st) { sum['Dữ liệu đồng bộ'] = [L.st]; sum['Phiên bản dữ liệu'] = L.stV; types['Dữ liệu đồng bộ'] = 'attachment'; types['Phiên bản dữ liệu'] = 'number'; }
       // Bảo trì quý: gộp cột theo loại thiết bị (khu vực mỗi dự án một khác nên không dùng làm tên cột).
       const groups = isPM(insp) ? PM.kinds.map((K) => ({ label: `BT. ${K.title}`, has: (sec) => sec.kind === K.k })) : CL.parts.map((p) => ({ label: `${p.id}. ${p.title}`, has: (sec) => sec.part === p.id }));
       if (isPM(insp)) { sum['Đợt bảo trì'] = periodLabel(f); types['Đợt bảo trì'] = 'text'; }
       for (const p of groups) {
         const its = all.filter((it) => p.has(secMap.get(it.secId) || {})); if (!its.length) continue;
-        const c = count(its), label = p.label;
+        const c = count(its, insp), label = p.label;
         const kp = `% hoàn thành – ${label}`, kn = `Không đạt – ${label}`, ka = `Ảnh – ${label}`;
         sum[kp] = c.pct; sum[kn] = c.nok;
         types[kp] = 'number'; types[kn] = 'number';
@@ -1498,7 +1756,7 @@
         const rows = [], keys = [];
         for (const sec of secMap.values()) {
           const its = all.filter((it) => it.secId === sec.id); if (!its.length) continue;
-          const c = count(its); const key = `${insp.id}|${sec.id}`; keys.push(key);
+          const c = count(its, insp); const key = `${insp.id}|${sec.id}`; keys.push(key);
           const data = {
             'Dự án': f.project, 'Đợt': periodLabel(f), 'Khu vực': `${sec.part}. ${sec.partTitle}`, 'Thiết bị': `${sec.id} · ${sec.title}`,
             'Loại thiết bị': (PM.kindOf(sec.kind) || {}).title || '', 'Mô tả': sec.sub || '', 'Hoàn thành (%)': c.pct, 'Đạt': c.ok, 'Không đạt': c.nok,
@@ -1552,6 +1810,8 @@
       if (gone.length) { await larkApi('/api/sync/items-delete', { recordIds: gone }); await save(); }
       L.at = Date.now(); await save();
       setSync('ok');
+      if (stateLater && cur === insp) scheduleSync(62000);
+      fetchPhotos(insp);
     } catch (e) {
       setSync('error', e.message || 'lỗi đồng bộ');
     } finally {
@@ -1800,7 +2060,7 @@
       case 'ph-view': viewPhoto(c, b.dataset.id); break;
       case 'ph-del': {
         if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.innerHTML = `${I.trash} Bấm lần nữa để xóa`; return; }
-        const r = R(c); r.ph = (r.ph || []).filter((x) => x !== b.dataset.id);
+        const r = RP(c); r.ph = (r.ph || []).filter((x) => x !== b.dataset.id); r.dx = (r.dx || []).concat(b.dataset.id);
         await store.del('photos', b.dataset.id); photoCache.delete(b.dataset.id); thumbCache.delete(b.dataset.id);
         touch(); closeModal(); if (S.view === 'insp' && S.tab === 'punch') render(false); else refreshItem(c); toast('Đã xóa ảnh'); break;
       }
@@ -1815,19 +2075,19 @@
         const u = document.getElementById('ni-u').value.trim();
         const nOf = cur.custom.filter((x) => x.sec === S.sec).length + 1;
         let code = `${S.sec}-X${nOf}`; while (cur.custom.some((x) => x.c === code)) code += '_';
-        cur.custom.push({ c: code, t, u: u || undefined, sec: S.sec, custom: true });
+        cur.custom.push({ c: code, t, u: u || undefined, sec: S.sec, custom: true }); mark('custom');
         touch(); closeModal(); S.focus = 'it-' + code; render(false); break;
       }
       case 'del-item': {
         if (!(await ask('Xóa hạng mục', 'Xóa hạng mục bổ sung này cùng ghi chú và ảnh của nó?', 'Xóa', true))) return;
         for (const id of (cur.res[c] || {}).ph || []) { await store.del('photos', id); photoCache.delete(id); thumbCache.delete(id); }
-        cur.custom = cur.custom.filter((x) => x.c !== c); delete cur.res[c]; touch(); render(false); break;
+        cur.custom = cur.custom.filter((x) => x.c !== c); delete cur.res[c]; mark('custom'); touch(); render(false); break;
       }
       case 'gps': {
         if (!navigator.geolocation) return toast('Thiết bị không hỗ trợ định vị');
         toast('Đang lấy vị trí…', 8000);
         navigator.geolocation.getCurrentPosition((p) => {
-          cur.info.gps = `${p.coords.latitude.toFixed(6)}, ${p.coords.longitude.toFixed(6)}`;
+          cur.info.gps = `${p.coords.latitude.toFixed(6)}, ${p.coords.longitude.toFixed(6)}`; mark('info');
           document.getElementById('f-gps').value = cur.info.gps; if (S.view !== 'info') touch(); toast('Đã lấy tọa độ');
         }, () => toast('Không lấy được vị trí – kiểm tra quyền truy cập vị trí'), { enableHighAccuracy: true, timeout: 15000 });
         break;
@@ -1839,7 +2099,15 @@
       case 'print': doPrint(); break;
       case 'export-pdf': exportPDF(); break;
       case 'pdf-lark': larkSavePdf(); break;
-      case 'lark-sync': runSync(); break;
+      case 'lark-sync': runSync({ force: true }); break;
+      case 'remote-refresh': toast('Đang tải danh sách từ Lark…'); loadRemote(true); break;
+      case 'pull': {
+        const row = (S.remote || []).find((x) => x.id === b.dataset.id); if (!row) break;
+        b.disabled = true; b.textContent = 'Đang tải từ Lark…';
+        try { const doc = await pullDoc(row); toast('Đã tải về: ' + (doc.info.project || '')); openInsp(doc.id); }
+        catch (e) { toast(e.message || 'Không tải được', 4000); b.disabled = false; b.textContent = 'Tải về làm tiếp'; }
+        break;
+      }
       case 'lark-login': {
         const inp = document.getElementById('s-lark');
         if (inp) { settings.larkUrl = inp.value.trim().replace(/\/$/, ''); lsSet('pvho-settings', settings); }
@@ -1883,8 +2151,8 @@
     const t = e.target;
     if (t.dataset.mf && t.dataset.c) { const r = R(t.dataset.c); (r.mv = r.mv || {})[t.dataset.mf] = t.value; mvUpdate(t.dataset.c); touch(); }
     else if (t.dataset.f && t.dataset.c) { R(t.dataset.c)[t.dataset.f] = t.value; touch(); }
-    else if (t.dataset.info) { cur.info[t.dataset.info] = t.value; if (S.view !== 'info') touch(); }
-    else if (t.hasAttribute('data-vnote')) { cur.verdict.note = t.value; touch(); }
+    else if (t.dataset.info) { cur.info[t.dataset.info] = t.value; mark('info'); if (S.view !== 'info') touch(); }
+    else if (t.hasAttribute('data-vnote')) { cur.verdict.note = t.value; mark('verdict'); touch(); }
     else if (t.hasAttribute('data-search')) {
       S.q = t.value; clearTimeout(S._qt);
       S._qt = setTimeout(() => { const pos = t.selectionStart; render(false); const n = document.getElementById('q'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* ignore */ } } }, 250);
@@ -1896,10 +2164,10 @@
     else if (t.hasAttribute('data-import')) { if (t.files[0]) importJSON(t.files[0]); t.value = ''; }
     else if (t.hasAttribute('data-site-import')) { if (t.files[0]) siteImport(t.files[0]); t.value = ''; }
     else if (t.hasAttribute('data-site-pick')) { const x = sitesAll()[+t.value]; if (t.value !== '' && x) { siteApply(x); render(false); toast('Đã điền hồ sơ: ' + x.info.project); } }
-    else if (t.dataset.info === 'period') { cur.info.period = t.value; cur.info.scope = PM.defaultScope(t.value); if (S.view !== 'info') touch(); render(false); }
-    else if (t.dataset.info === 'scope') { cur.info.scope = t.value; if (S.view !== 'info') touch(); render(false); }
-    else if (t.hasAttribute('data-verdict')) { cur.verdict.v = t.value; touch(); render(false); }
-    else if (t.dataset.info === 'type' || t.dataset.info === 'purpose') { cur.info[t.dataset.info] = t.value; if (S.view !== 'info') { touch(); } }
+    else if (t.dataset.info === 'period') { cur.info.period = t.value; cur.info.scope = PM.defaultScope(t.value); mark('info'); if (S.view !== 'info') touch(); render(false); }
+    else if (t.dataset.info === 'scope') { cur.info.scope = t.value; mark('info'); if (S.view !== 'info') touch(); render(false); }
+    else if (t.hasAttribute('data-verdict')) { cur.verdict.v = t.value; mark('verdict'); touch(); render(false); }
+    else if (t.dataset.info === 'type' || t.dataset.info === 'purpose') { cur.info[t.dataset.info] = t.value; mark('info'); if (S.view !== 'info') { touch(); } }
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $modal.innerHTML) { if (askResolve) settleAsk(false); else closeModal(); }

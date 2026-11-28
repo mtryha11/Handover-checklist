@@ -29,6 +29,10 @@
   **sao chép tóm tắt** dạng text.
 - **Sao lưu / khôi phục** file `.json` (gồm cả ảnh) để chuyển máy hoặc lưu hồ sơ.
 
+- **Làm tiếp trên máy khác**: đăng nhập Lark là thấy công việc của cả nhóm đang có trên Base, tải về làm tiếp; thay đổi
+  giữa các máy được gộp theo từng hạng mục (lần sửa sau cùng thắng), ảnh gộp cả hai bên.
+- **Ghi chú bằng giọng nói**: ghi âm rồi chuyển thành chữ bằng Whisper qua cầu nối (cần khóa API đặt trên máy chủ);
+  mất mạng thì giữ ghi âm và chuyển sau.
 - **Đồng bộ Lark Base** (tùy chọn): mở app ngay trong Lark Workplace, tự đẩy % hoàn thành, kết quả từng hạng mục,
   ảnh và PDF lên Lark Base qua cầu nối chạy trên máy chủ nội bộ. Xem [docs/LARK-SETUP.md](docs/LARK-SETUP.md).
 

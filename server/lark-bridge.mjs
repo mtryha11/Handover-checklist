@@ -30,7 +30,13 @@ const CFG = {
   publicUrl: (process.env.PUBLIC_URL || '').replace(/\/$/, ''),
   origins: (process.env.ALLOWED_ORIGINS || 'https://mtryha11.github.io').split(',').map((s) => s.trim()).filter(Boolean),
   sessionSecret: process.env.SESSION_SECRET || '',
-  sessionDays: +(process.env.SESSION_DAYS || 30)
+  sessionDays: +(process.env.SESSION_DAYS || 30),
+  // Chuyển ghi âm thành chữ (Whisper qua API tương thích OpenAI). Không có STT_API_KEY thì tính năng tắt.
+  sttKey: process.env.STT_API_KEY || '',
+  sttUrl: process.env.STT_URL || 'https://api.openai.com/v1/audio/transcriptions',
+  sttModel: process.env.STT_MODEL || 'whisper-1',
+  sttLang: process.env.STT_LANGUAGE || 'vi',
+  sttPrompt: process.env.STT_PROMPT || 'Ghi chú bảo trì hệ thống điện mặt trời. Thuật ngữ: inverter, string, MPPT, PV1, PV2, MC4, DC switch, ACB, MCCB, MCB, SPD, tủ MSB, tủ DB, busbar, đầu cốt, cáp DC, cáp AC, máng cáp, tiếp địa, rail, kẹp giữa, kẹp biên, chân L, tấm pin, hotspot, diode bypass, quạt tản nhiệt, logger, router, UPS, megaohm, ampe kìm, kWh, kWp.'
 };
 // Chấp nhận cả token lẫn nguyên đường dẫn Base (…/base/<token>?table=…&view=…): chỉ lấy phần token.
 function baseToken(raw) {
@@ -259,6 +265,22 @@ async function ensureDevTable(period) {
   });
 }
 
+/* ---------------- tải tệp đính kèm từ Base về (đồng bộ xuống máy khác) ---------------- */
+async function mediaDownload(token, hint) {
+  const tok = await tokenOf('tenant');
+  const get = (q) => fetch(`${CFG.open}/open-apis/drive/v1/medias/${token}/download${q}`, { headers: { Authorization: `Bearer ${tok}` } });
+  let r = await get('');
+  // Base bật phân quyền nâng cao: Lark đòi kèm bảng chứa tệp.
+  if (!r.ok && hint) r = await get(`?extra=${encodeURIComponent(JSON.stringify({ bitablePerm: { tableId: hint } }))}`);
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try { const j = await r.json(); if (j.msg) msg = `${j.msg} (mã ${j.code})`; } catch (e) { /* không phải JSON */ }
+    throw new LarkError(`Không tải được tệp từ Lark: ${msg}. Kiểm tra ứng dụng Lark đã có quyền xem / tải tệp (bitable:app hoặc drive:drive:readonly).`, 502, 502);
+  }
+  return { buf: Buffer.from(await r.arrayBuffer()), mime: (r.headers.get('content-type') || 'application/octet-stream').split(';')[0] };
+}
+const cellText = (v) => (Array.isArray(v) ? v.map((x) => (x && x.text) || (typeof x === 'string' ? x : '')).join('') : v == null ? '' : String(v));
+
 /* ---------------- phiên đăng nhập (token ký HMAC) ---------------- */
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
 function sign(obj) { const p = b64u(JSON.stringify(obj)); return `${p}.${b64u(crypto.createHmac('sha256', CFG.sessionSecret).update(p).digest())}`; }
@@ -343,7 +365,57 @@ const routes = {
     redirect(res, `${st.r}#lark_token=${tok}`);
   },
 
-  'GET /api/me': async ({ user }) => ({ name: user.name, open_id: user.oid, base: CFG.base ? `${CFG.open.replace('open.', '')}/base/${CFG.base}` : '', features: ['devices'], devSlots: DEV_SLOTS }),
+  'GET /api/me': async ({ user }) => ({ name: user.name, open_id: user.oid, base: CFG.base ? `${CFG.open.replace('open.', '')}/base/${CFG.base}` : '', features: ['devices', 'pull'].concat(CFG.sttKey ? ['stt'] : []), devSlots: DEV_SLOTS }),
+
+  // Danh sách công việc của cả nhóm đang có trên Base (để tải về máy khác và làm tiếp). ?id=… chỉ lấy một công việc.
+  'GET /api/inspections': async ({ url }) => {
+    const ids = await ensureTables();
+    if (!ftypes.insp.has('Dữ liệu đồng bộ')) return { items: [] };
+    const names = ['Mã biên bản', 'Dự án', 'Mục đích', 'Đợt bảo trì', 'Hoàn thành (%)', 'Người đồng bộ', 'Cập nhật lúc', 'Phiên bản dữ liệu', 'Dữ liệu đồng bộ'].filter((n) => ftypes.insp.has(n));
+    const id = url.searchParams.get('id');
+    const q = { field_names: names, sort: [{ field_name: 'Cập nhật lúc', desc: true }] };
+    if (id) q.filter = { conjunction: 'and', conditions: [{ field_name: 'Mã biên bản', operator: 'is', value: [id] }] };
+    const d = await lark('POST', `/open-apis/bitable/v1/apps/${CFG.base}/tables/${ids.insp}/records/search?page_size=${id ? 5 : 100}`, q);
+    const items = (d.items || []).map((it) => {
+      const f = it.fields || {}; const st = (f['Dữ liệu đồng bộ'] || [])[0];
+      return { rec: it.record_id, id: cellText(f['Mã biên bản']), project: cellText(f['Dự án']), purpose: cellText(f['Mục đích']), period: cellText(f['Đợt bảo trì']),
+        pct: +f['Hoàn thành (%)'] || 0, by: cellText(f['Người đồng bộ']), at: +f['Cập nhật lúc'] || 0, ver: +f['Phiên bản dữ liệu'] || 0, state: st ? st.file_token : '' };
+    }).filter((x) => x.id && x.state);
+    return { items };
+  },
+
+  // Tải một tệp đính kèm (ảnh, file dữ liệu đồng bộ) từ Base về app. ?t=insp|items|dev&p=<kỳ> là gợi ý bảng chứa tệp.
+  'GET /api/media': async ({ url }) => {
+    const token = (url.searchParams.get('token') || '').replace(/[^A-Za-z0-9_-]/g, '');
+    if (!token) throw new LarkError('Thiếu mã tệp', 400, 400);
+    const ids = await ensureTables(); const t = url.searchParams.get('t');
+    let hint = t === 'items' ? ids.items : ids.insp;
+    if (t === 'dev') { const name = devTableName(url.searchParams.get('p')); hint = devTables.has(name) ? devTables.get(name).id : (await ensureDevTable(url.searchParams.get('p'))).id; }
+    const f = await mediaDownload(token, hint);
+    if (f.buf.length > 25 * 1024 * 1024) throw new LarkError('Tệp lớn hơn 25 MB', 413, 413);
+    return { data: f.buf.toString('base64'), mime: f.mime };
+  },
+
+  // Chuyển ghi âm ghi chú thành chữ.
+  'POST /api/stt': async ({ body }) => {
+    if (!CFG.sttKey) throw new LarkError('Máy chủ chưa cấu hình STT_API_KEY', 501, 501);
+    const buf = Buffer.from(String(body.data || '').replace(/^data:[^,]*,/, ''), 'base64');
+    if (!buf.length) throw new LarkError('Ghi âm rỗng', 400, 400);
+    if (buf.length > 24 * 1024 * 1024) throw new LarkError('Ghi âm lớn hơn 24 MB', 413, 413);
+    const mime = String(body.mime || 'audio/webm').split(';')[0].toLowerCase();
+    const ext = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'm4a', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg' }[mime] || 'webm';
+    const fd = new FormData();
+    fd.append('file', new Blob([buf], { type: mime }), `ghi-chu.${ext}`);
+    fd.append('model', CFG.sttModel); fd.append('response_format', 'json'); fd.append('temperature', '0');
+    if (CFG.sttLang) fd.append('language', CFG.sttLang);
+    if (CFG.sttPrompt) fd.append('prompt', CFG.sttPrompt);
+    let r;
+    try { r = await fetch(CFG.sttUrl, { method: 'POST', headers: { Authorization: `Bearer ${CFG.sttKey}` }, body: fd, signal: AbortSignal.timeout(90000) }); }
+    catch (e) { throw new LarkError('Không gọi được dịch vụ chuyển giọng nói: ' + e.message, 502, 502); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new LarkError(`Dịch vụ chuyển giọng nói báo lỗi: ${(j.error && (j.error.message || j.error)) || 'HTTP ' + r.status}`, 502, 502);
+    return { text: String(j.text || '').trim() };
+  },
 
   // Tạo / cập nhật 1 dòng trong bảng "Biên bản".
   'POST /api/sync/inspection': async ({ body, user }) => {

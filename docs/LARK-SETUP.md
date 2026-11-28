@@ -168,6 +168,38 @@ Dashboard:
 - Biểu đồ: số dòng bảng `Tồn tại` theo `Phần` / `Nhóm` / `Mức độ` / `Tình trạng khắc phục`.
 - Bảng Biên bản có sẵn cột `% hoàn thành – A…K` và `Không đạt – A…K` để vẽ tiến độ từng Phần.
 
+## Làm tiếp trên máy khác (đồng bộ hai chiều)
+
+Sau khi đăng nhập Lark, trang chủ của app có thêm mục **Trên Lark – công việc của cả nhóm**: mọi công việc đã đồng bộ
+lên Base mà máy này chưa có. Bấm **Tải về làm tiếp** để tải kết quả, ghi chú, số đo, chữ ký về máy; ảnh tải nền sau đó.
+Từ lúc ấy thay đổi ở máy nào cũng được đưa sang máy kia mỗi lần đồng bộ (khi mở công việc, khi quay lại ứng dụng,
+khi bấm **Đồng bộ ngay**, và tự động trong lúc làm).
+
+- Dùng cho trường hợp một người làm trong Lark rồi chuyển sang app cài ở màn hình chính, hoặc người khác làm tiếp.
+- Hai máy cùng sửa: so theo **từng hạng mục**, lần sửa sau cùng thắng; ảnh được gộp cả hai bên; xóa ảnh ở máy này thì
+  máy kia cũng xóa.
+- Dữ liệu để dựng lại công việc nằm ở hai cột của bảng **Biên bản**: `Dữ liệu đồng bộ` (một file `.json`) và
+  `Phiên bản dữ liệu`. **Không sửa, không xóa hai cột này trên Lark.**
+- Cầu nối cần tải được tệp đính kèm từ Base. Nếu app báo "Không tải được tệp từ Lark", vào Lark Developer Console
+  cấp thêm cho ứng dụng quyền xem / tải tệp (ví dụ `drive:drive:readonly`) rồi phát hành lại phiên bản ứng dụng.
+- Cần có mạng để tải về và để đẩy lên. Mất mạng thì app vẫn làm việc bình thường, có mạng sẽ tự đồng bộ.
+
+## Ghi chú bằng giọng nói (Whisper)
+
+Thêm vào file `.env` của cầu nối rồi khởi động lại:
+
+```sh
+STT_API_KEY=<khóa API của dịch vụ Whisper>
+# Mặc định gọi OpenAI. Nhà cung cấp khác tương thích OpenAI thì thêm:
+# STT_URL=https://api.openai.com/v1/audio/transcriptions
+# STT_MODEL=whisper-1
+```
+
+Trong app, dưới ô ghi chú của mỗi hạng mục có nút **Nói để ghi chú**: bấm để ghi âm, bấm lần nữa để dừng (tối đa
+2 phút mỗi lần). Ghi âm được gửi qua cầu nối tới Whisper kèm danh sách thuật ngữ điện mặt trời (sửa bằng biến
+`STT_PROMPT`), chữ trả về được nối vào ghi chú. Mất mạng thì ghi âm được giữ trên máy và tự chuyển thành chữ ở lần
+đồng bộ sau. Khóa API chỉ nằm trên máy chủ, không nằm trong app.
+
 ## Dữ liệu được đồng bộ (tiết kiệm bản ghi)
 
 Gói Lark giới hạn số bản ghi (ví dụ 20.000), nên dữ liệu được tổ chức **nhiều cột, ít dòng**:
