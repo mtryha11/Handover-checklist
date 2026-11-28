@@ -502,7 +502,7 @@
       return `<button class="card insp-card ${S.sel ? 'picking' : ''} ${on ? 'picked' : ''}" data-act="${S.sel ? 'sel-toggle' : 'open'}" data-id="${x.id}" ${S.sel ? `aria-pressed="${!!on}"` : ''}>
         ${S.sel ? `<span class="pick-box">${on ? I.check : ''}</span>` : ''}
         <div class="row"><h3 class="grow">${esc(x.info.project || 'Chưa đặt tên')}</h3><span class="chip sun">${n.pct}%</span></div>
-        <div class="insp-meta"><span class="chip ${n.none ? 'sun' : 'ok'}" style="margin-right:2px">${n.none ? 'Đang dở' : 'Đã xong'}</span>${(S.remote || []).some((y) => y.id === x.id && y.ver > ((x.lark || {}).stV || 0)) ? '<span class="chip nok" style="margin-right:2px">Có bản mới trên Lark</span>' : ''}<span>${esc(p.label)}${x.info.purpose === 'pm' ? ' · ' + esc(periodLabel(x.info)) : ''}</span><span>${esc(CL.types[x.info.type] || '')}</span>${x.info.dc ? `<span>${esc(x.info.dc)} kWp</span>` : ''}<span>${fmtDate(x.info.date)}</span></div>
+        <div class="insp-meta"><span class="chip ${n.none ? 'sun' : 'ok'}" style="margin-right:2px">${n.none ? 'Đang dở' : 'Đã xong'}</span>${(S.remote || []).some((y) => y.id === x.id && y.state && y.ver > ((x.lark || {}).stV || 0)) ? '<span class="chip nok" style="margin-right:2px">Có bản mới trên Lark</span>' : ''}<span>${esc(p.label)}${x.info.purpose === 'pm' ? ' · ' + esc(periodLabel(x.info)) : ''}</span><span>${esc(CL.types[x.info.type] || '')}</span>${x.info.dc ? `<span>${esc(x.info.dc)} kWp</span>` : ''}<span>${fmtDate(x.info.date)}</span></div>
         ${bar(n)}
         <div class="chips"><span class="chip ok">${n.ok} đạt</span><span class="chip nok">${n.nok} không đạt</span>${n.A ? `<span class="chip nok">${n.A} mức A</span>` : ''}<span class="chip">${n.none} chưa kiểm</span></div>
       </button>`;
@@ -546,7 +546,7 @@
       ${rows.map((x) => `<article class="card pad remote-card">
         <div class="row"><h3 class="grow">${esc(x.project || 'Chưa đặt tên')}</h3><span class="chip sun">${x.pct}%</span></div>
         <div class="insp-meta"><span>${esc(x.purpose)}${x.period ? ' · ' + esc(x.period) : ''}</span><span>${esc(x.by)}</span><span>${x.at ? fmtDT(x.at) : ''}</span></div>
-        <button class="btn block" data-act="pull" data-id="${esc(x.id)}">${I.save} Tải về làm tiếp</button></article>`).join('') || '<p class="muted small" style="margin:0">Mọi công việc trên Lark đều đã có trên máy này.</p>'}`;
+        ${x.state ? `<button class="btn block" data-act="pull" data-id="${esc(x.id)}">${I.save} Tải về làm tiếp</button>` : '<p class="muted small" style="margin:0">Chưa tải về được: công việc này mới chỉ được đồng bộ bằng bản ứng dụng cũ. Mở nó trên máy đã tạo (bản mới) và bấm <b>Đồng bộ ngay</b> một lần.</p>'}</article>`).join('') || '<p class="muted small" style="margin:0">Mọi công việc trên Lark đều đã có trên máy này.</p>'}`;
   }
 
   /* ----- info form ----- */
@@ -681,7 +681,7 @@
     const detail = open ? `<div class="detail">
         ${st === 'nok' ? `<div class="sev" role="group" aria-label="Mức độ">${['A', 'B', 'C'].map((k) => `<button class="sv-${k} ${(r.sev || 'B') === k ? 'on' : ''}" data-act="sev" data-v="${k}" data-c="${c}"><b>${k}</b>${SEV[k].short}</button>`).join('')}</div>` : ''}
         <textarea class="inp" id="n-${c}" data-f="note" data-c="${c}" placeholder="${st === 'nok' ? 'Mô tả tồn tại, vị trí (dãy / string / tủ / inverter số…)' : 'Ghi chú'}">${esc(r.note || '')}</textarea>
-        ${(canRecord && larkReady()) || SR ? `<button class="btn mic ${(vrec.c === c && vrec.mr) || mic.c === c ? 'on' : ''}" data-act="mic" data-c="${c}">${I.mic}<span>${micLabel(c)}</span></button><p class="muted small" id="au-${c}" style="margin:0">${auLine(r)}</p>` : '<p class="muted small" style="margin:0">Nhập bằng giọng nói: chạm vào ô ghi chú rồi bấm biểu tượng micro trên bàn phím.</p>'}
+        ${!VOICE ? '' : (canRecord && larkReady()) || SR ? `<button class="btn mic ${(vrec.c === c && vrec.mr) || mic.c === c ? 'on' : ''}" data-act="mic" data-c="${c}">${I.mic}<span>${micLabel(c)}</span></button><p class="muted small" id="au-${c}" style="margin:0">${auLine(r)}</p>` : '<p class="muted small" style="margin:0">Nhập bằng giọng nói: chạm vào ô ghi chú rồi bấm biểu tượng micro trên bàn phím.</p>'}
         ${st === 'nok' ? `<div class="two"><div class="field"><label for="rp-${c}">Trách nhiệm xử lý</label><input class="inp" id="rp-${c}" data-f="resp" data-c="${c}" value="${esc(r.resp || '')}" placeholder="EPC / CĐT / O&M"></div>
           <div class="field"><label for="du-${c}">Hạn khắc phục</label><input class="inp" type="date" id="du-${c}" data-f="due" data-c="${c}" value="${esc(r.due || '')}"></div></div>` : ''}
         ${nph ? `<div class="photos">${photosHTML(c, r.ph)}</div>` : ''}
@@ -726,6 +726,7 @@
   }
 
   /* ----- ghi chú bằng giọng nói (Web Speech API; cần mạng, tùy trình duyệt) ----- */
+  const VOICE = !!(window.APP_CONFIG && window.APP_CONFIG.voice); // tạm tắt trong js/config.js
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const mic = { rec: null, c: null, on: false };
   function micStop() { mic.on = false; if (mic.rec) { try { mic.rec.stop(); } catch (e) { /* ignore */ } } }
@@ -1562,7 +1563,7 @@
     pullAt.set(doc.id, Date.now());
     const d = await larkApi('/api/inspections?id=' + encodeURIComponent(doc.id));
     const row = (d.items || []).find((x) => x.id === doc.id);
-    if (!row || !(row.ver > ((doc.lark || {}).stV || 0))) return false;
+    if (!row || !row.state || !(row.ver > ((doc.lark || {}).stV || 0))) return false;
     await pullDoc(row);
     if (cur === doc) { clearTimeout(saveT); saveT = null; if (!document.getElementById('cam')) render(false); toast('Đã cập nhật thay đổi từ máy khác', 3000); }
     return true;
@@ -1669,7 +1670,7 @@
   }
   const auLine = (r) => ((r.au || []).length ? `${r.au.length} ghi âm đang chờ chuyển thành chữ` : '');
   async function sttFlush(insp) {
-    if (!feat('stt')) return;
+    if (!VOICE || !feat('stt')) return;
     const recs = (await store.photosOf(insp.id)).filter((p) => p.kind === 'audio');
     for (const rec of recs) { if (!(await sttOne(insp, rec))) break; }
   }

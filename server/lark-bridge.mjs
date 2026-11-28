@@ -375,7 +375,6 @@ const routes = {
   // Danh sách công việc của cả nhóm đang có trên Base (để tải về máy khác và làm tiếp). ?id=… chỉ lấy một công việc.
   'GET /api/inspections': async ({ url }) => {
     const ids = await ensureTables();
-    if (!ftypes.insp.has('Dữ liệu đồng bộ')) return { items: [] };
     const names = ['Mã biên bản', 'Dự án', 'Mục đích', 'Đợt bảo trì', 'Hoàn thành (%)', 'Người đồng bộ', 'Cập nhật lúc', 'Phiên bản dữ liệu', 'Dữ liệu đồng bộ'].filter((n) => ftypes.insp.has(n));
     const id = url.searchParams.get('id');
     const q = { field_names: names, sort: [{ field_name: 'Cập nhật lúc', desc: true }] };
@@ -385,7 +384,7 @@ const routes = {
       const f = it.fields || {}; const st = (f['Dữ liệu đồng bộ'] || [])[0];
       return { rec: it.record_id, id: cellText(f['Mã biên bản']), project: cellText(f['Dự án']), purpose: cellText(f['Mục đích']), period: cellText(f['Đợt bảo trì']),
         pct: +f['Hoàn thành (%)'] || 0, by: cellText(f['Người đồng bộ']), at: +f['Cập nhật lúc'] || 0, ver: +f['Phiên bản dữ liệu'] || 0, state: st ? st.file_token : '' };
-    }).filter((x) => x.id && x.state);
+    }).filter((x) => x.id); // state rỗng = công việc chưa có file dữ liệu đồng bộ (đồng bộ bằng bản app cũ): app hiện kèm giải thích
     return { items };
   },
 
