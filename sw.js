@@ -1,6 +1,6 @@
 /* Service worker: lưu toàn bộ ứng dụng vào bộ nhớ đệm để chạy offline ngoài công trường.
  * Tăng VERSION mỗi khi sửa file để điện thoại tải bản mới. */
-const VERSION = 'pvho-v16';
+const VERSION = 'pvho-v17';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'js/config.js', 'js/checklist.js', 'js/pm.js', 'js/brand.js', 'js/xlsx.js', 'js/pdf.js', 'js/app.js',
   'js/vendor/jspdf.umd.min.js', 'js/vendor/jspdf.plugin.autotable.min.js', 'js/vendor/pdf-fonts.js',
